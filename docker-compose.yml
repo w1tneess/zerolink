@@ -1,0 +1,18 @@
+services:
+  zerolink:
+    build: .
+    container_name: zerolink
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_DRIVER=sqlite
+      - DATABASE_URL=/app/data/links.db
+    volumes:
+      - zerolink_data:/app/data
+
+volumes:
+  zerolink_data:

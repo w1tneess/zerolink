@@ -1,0 +1,14 @@
+<svg width="128" height="128" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .zl-primary { stroke: #0D1117; }
+    .zl-accent { stroke: #2563EB; }
+    @media (prefers-color-scheme: dark) {
+      .zl-primary { stroke: #F3F5F9; }
+      .zl-accent { stroke: #3B82F6; }
+    }
+  </style>
+  <g transform="rotate(-45 16 16)">
+    <path class="zl-primary" d="M20.5 6.6H10.2A3.35 3.35 0 0 0 10.2 13.3H18.2" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path class="zl-accent" d="M11.5 25.4H21.8A3.35 3.35 0 0 0 21.8 18.7H13.8" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

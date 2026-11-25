@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --surface-elevated: #f8f9fb;
+  --bezel-outer: rgba(15, 23, 42, 0.035);
+  --bezel-ring: rgba(15, 23, 42, 0.06);
+  --inner-highlight: rgba(255, 255, 255, 0.9);
+  --text: #0d1117;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-fg: #ffffff;
+  --accent-ink: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.08);
+  --positive: #15803d;
+  --positive-soft: rgba(21, 128, 61, 0.09);
+  --negative: #dc2626;
+  --negative-soft: rgba(220, 38, 38, 0.08);
+  --warning: #b45309;
+  --warning-soft: rgba(180, 83, 9, 0.08);
+  --shadow-ambient: 0 2px 8px -2px rgba(15, 23, 42, 0.06),
+    0 16px 36px -16px rgba(15, 23, 42, 0.08);
+  --shadow-float: 0 24px 56px -16px rgba(15, 23, 42, 0.16);
+  --ease-agency: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: #08090d;
+  --surface: #11131a;
+  --surface-elevated: #181b24;
+  --bezel-outer: rgba(255, 255, 255, 0.035);
+  --bezel-ring: rgba(255, 255, 255, 0.08);
+  --inner-highlight: rgba(255, 255, 255, 0.09);
+  --text: #f3f5f9;
+  --text-secondary: #9aa4b8;
+  --text-muted: #717b91;
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --accent-fg: #ffffff;
+  --accent-ink: #60a5fa;
+  --accent-soft: rgba(59, 130, 246, 0.14);
+  --positive: #4cc38a;
+  --positive-soft: rgba(76, 195, 138, 0.12);
+  --negative: #f87171;
+  --negative-soft: rgba(248, 113, 113, 0.12);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --shadow-ambient: 0 24px 60px -18px rgba(0, 0, 0, 0.65);
+  --shadow-float: 0 36px 80px -16px rgba(0, 0, 0, 0.8);
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html,
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html,
+  body {
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+}
+
+html {
+  accent-color: var(--accent);
+}
+
+:is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+h1,
+h2 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+input:user-invalid,
+select:user-invalid,
+textarea:user-invalid {
+  border-color: var(--negative);
+}
+
+dialog.zl-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.zl-dialog::backdrop {
+  background-color: rgba(8, 9, 13, 0.56);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.zl-glass-header {
+  background-color: color-mix(in srgb, var(--surface) 84%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+@keyframes modal-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes modal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-modal {
+  animation: modal-rise 280ms var(--ease-agency) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-modal {
+    animation: modal-fade 180ms ease both;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .zl-glass-header {
+    background-color: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  dialog.zl-dialog::backdrop {
+    background-color: rgba(8, 9, 13, 0.72);
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --bezel-ring: rgba(15, 23, 42, 0.24);
+  }
+
+  .dark {
+    --bezel-ring: rgba(255, 255, 255, 0.28);
+  }
+}

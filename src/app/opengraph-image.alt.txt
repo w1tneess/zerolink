@@ -1,0 +1,1 @@
+ZeroLink — Simple, private link shortener with no tracking cookies and instant link previews before you click.

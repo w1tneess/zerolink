@@ -5,8 +5,8 @@ type BrandMarkProps = SVGProps<SVGSVGElement> & {
 };
 
 /**
- * Geometric ZeroLink brand mark: two interlocking routing arms forming
- * a slashed zero and forward-link channel.
+ * Geometric ZeroLink brand mark (Concept A): closed capsule link
+ * with a central crossbar forming a zero-link silhouette.
  */
 export function ZeroLinkMark({
   size = 24,
@@ -25,18 +25,22 @@ export function ZeroLinkMark({
     >
       <g transform="rotate(-45 16 16)">
         <path
-          d="M20.5 6.6H10.2A3.35 3.35 0 0 0 10.2 13.3H18.2"
+          d="M21 9.5H10.5A6.5 6.5 0 0 0 10.5 22.5H14.5"
           stroke="currentColor"
-          strokeWidth="2.8"
+          strokeWidth="3.1"
           strokeLinecap="round"
-          strokeLinejoin="round"
         />
         <path
-          d="M11.5 25.4H21.8A3.35 3.35 0 0 0 21.8 18.7H13.8"
-          stroke="var(--accent)"
-          strokeWidth="2.8"
+          d="M11 22.5H21.5A6.5 6.5 0 0 0 21.5 9.5H17.5"
+          className="stroke-[var(--accent)] dark:stroke-[var(--accent-hover)]"
+          strokeWidth="3.1"
           strokeLinecap="round"
-          strokeLinejoin="round"
+        />
+        <path
+          d="M13 16H19"
+          stroke="currentColor"
+          strokeWidth="2.6"
+          strokeLinecap="round"
         />
       </g>
     </svg>

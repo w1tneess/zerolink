@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     }
     if (getLinkBySlug(slugCheck.slug)) {
       return NextResponse.json(
-        { error: `Slug "/${slugCheck.slug}" is already in use.` },
+        { error: `Ending "/${slugCheck.slug}" is already in use.` },
         { status: 409 }
       );
     }
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "301 permanent redirects cannot be used with expiration dates or click limits. Choose 302 or 307.",
+          "Permanent links can't be combined with an expiration date or visit limit. Choose Standard or Temporary instead.",
       },
       { status: 400 }
     );
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof SlugTakenError) {
       return NextResponse.json(
-        { error: `Slug "/${err.slug}" is already in use.` },
+        { error: `Ending "/${err.slug}" is already in use.` },
         { status: 409 }
       );
     }

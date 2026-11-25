@@ -1,47 +1,50 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { switzer, azeretMono } from "./fonts";
+import { Motion } from "@/components/Motion";
 import "./globals.css";
 
-const geistSans = Geist({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-geist-sans",
-  display: "swap",
-});
-
-const geistMono = Geist_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-geist-mono",
-  display: "swap",
-});
-
 export const metadata: Metadata = {
-  title: "ZeroLink — Auditable, Zero-Telemetry URL Shortener",
+  metadataBase: new URL(process.env.APP_BASE_URL || "http://localhost:3000"),
+  title: {
+    default: "ZeroLink — Simple, Private Link Shortener",
+    template: "%s | ZeroLink",
+  },
   description:
-    "Self-hostable public and personal URL shortener with zero tracking cookies, zero third-party requests, and full destination inspection.",
+    "Create clean short links with no tracking cookies, no ads, and an instant preview before anyone clicks.",
   referrer: "no-referrer",
+  alternates: { canonical: "./" },
+  openGraph: {
+    type: "website",
+    siteName: "ZeroLink",
+    title: "ZeroLink — Simple, Private Link Shortener",
+    description:
+      "Make long links short and preview where any link leads before you click. Simple, private, and free of trackers.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ZeroLink — Simple, Private Link Shortener",
+    description:
+      "Make long links short and preview where any link leads before you click. Simple, private, and free of trackers.",
+  },
 };
 
-const THEME_INIT_SCRIPT = `
+const BOOT_FLAGS_SCRIPT = `
 (function() {
   try {
-    var mq = window.matchMedia('(prefers-color-scheme: dark)');
-    function applyTheme() {
-      var stored = localStorage.getItem('zerolink_theme');
-      if (stored === 'dark' || (!stored && mq.matches)) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
+    var root = document.documentElement;
+    root.classList.add('js');
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      root.classList.add('motion');
     }
-    applyTheme();
-    if (mq.addEventListener) {
-      mq.addEventListener('change', function() {
-        if (!localStorage.getItem('zerolink_theme')) applyTheme();
-      });
+    var stored = localStorage.getItem('zerolink_theme');
+    if (stored === 'light') {
+      root.classList.remove('dark');
+    } else {
+      root.classList.add('dark');
     }
-  } catch (e) {}
+  } catch (e) {
+    document.documentElement.classList.add('js', 'dark');
+  }
 })();
 `;
 
@@ -54,14 +57,21 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${switzer.variable} ${azeretMono.variable} h-full antialiased`}
     >
       <head>
-        <meta name="color-scheme" content="light dark" />
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <meta name="color-scheme" content="dark light" />
+        <script dangerouslySetInnerHTML={{ __html: BOOT_FLAGS_SCRIPT }} />
       </head>
-      <body className="min-h-[100dvh] flex flex-col bg-[var(--bg)] text-[var(--text)] selection:bg-[var(--accent)] selection:text-[var(--accent-fg)]">
+      <body className="min-h-[100dvh] flex flex-col bg-[var(--bg)] text-[var(--text)]">
+        <a className="skip-link" href="#main">
+          Skip to content
+        </a>
+        <div id="curtain" aria-hidden="true">
+          <div className="curtain__panel" />
+        </div>
         {children}
+        <Motion />
       </body>
     </html>
   );

@@ -36,7 +36,7 @@ async function solveOnWorker(
     };
     worker.onerror = (err) => {
       worker.terminate();
-      reject(new Error(err.message || "PoW worker failed"));
+      reject(new Error(err.message || "Browser security check failed"));
     };
     worker.postMessage({ prefix, difficulty });
   });
@@ -66,7 +66,7 @@ async function solveOnMainThreadFallback(
 export async function fetchAndSolvePow(): Promise<ClientPowSubmission> {
   const res = await fetch("/api/pow/challenge", { cache: "no-store" });
   if (!res.ok) {
-    throw new Error("Could not fetch Proof-of-Work challenge.");
+    throw new Error("Couldn't start the quick spam check. Please try again.");
   }
   const challenge = (await res.json()) as ClientPowChallenge;
 

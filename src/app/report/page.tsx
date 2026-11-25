@@ -1,8 +1,14 @@
+import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
 import { ReportForm } from "@/components/report-form";
-import { Reveal } from "@/components/reveal";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Report a link",
+  description:
+    "Let the site owner know about unsafe, scam, or spam short links privately with no tracking.",
+};
 
 export default async function ReportPage({
   searchParams,
@@ -14,23 +20,26 @@ export default async function ReportPage({
   return (
     <div className="flex min-h-[100dvh] flex-col">
       <SiteHeader active="report" />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-12 md:py-24 sm:px-6">
-        <Reveal>
-          <div className="mb-8 space-y-4">
-            <span className="inline-flex items-center rounded-full bg-black/5 px-3 py-1 text-xs font-medium text-[var(--text-secondary)] dark:bg-white/10">
-              Community safety
-            </span>
-            <h1 className="text-3xl font-medium tracking-[-0.025em] text-[var(--text)] sm:text-5xl">
-              Report an abusive link
-            </h1>
-            <p className="text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
-              Flag phishing, malware, or spam links for administrator review. No
-              account is required, and no IP address or identity is stored.
-            </p>
-          </div>
+      <main
+        id="main"
+        tabIndex={-1}
+        className="mx-auto w-full max-w-2xl flex-1 px-[var(--gutter)] py-12 md:py-20"
+      >
+        <div className="mb-8 space-y-3">
+          <h1
+            data-split="lines"
+            data-intro
+            className="text-3xl font-medium tracking-[-0.03em] text-[var(--text)] sm:text-5xl"
+          >
+            Report an unsafe link
+          </h1>
+          <p className="max-w-[54ch] text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
+            Let the site owner know about scams, harmful downloads, or spam. No
+            account is needed, and none of your personal details are saved.
+          </p>
+        </div>
 
-          <ReportForm initialSlug={slug ?? ""} />
-        </Reveal>
+        <ReportForm initialSlug={slug ?? ""} />
       </main>
     </div>
   );

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { domainToASCII } from "node:url";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -55,62 +56,73 @@ export async function POST(
   const { action, reportId } = parsed.data;
 
   if (action === "disable_link") {
-    db.update(links)
-      .set({ status: "disabled", updatedAt: now })
-      .where(eq(links.id, link.id))
-      .run();
-    db.update(abuseReports)
-      .set({ status: "resolved" })
-      .where(eq(abuseReports.linkId, link.id))
-      .run();
-  } else if (action === "restore_link") {
-    db.update(links)
-      .set({ status: "active", updatedAt: now })
-      .where(eq(links.id, link.id))
-      .run();
-    db.update(abuseReports)
-      .set({ status: "dismissed" })
-      .where(eq(abuseReports.linkId, link.id))
-      .run();
-  } else if (action === "delete_link") {
-    db.delete(links).where(eq(links.id, link.id)).run();
-  } else if (action === "dismiss_report") {
-    if (reportId) {
-      const updatedReport = db
-        .update(abuseReports)
-        .set({ status: "dismissed" })
-        .where(
-          and(
-            eq(abuseReports.id, reportId),
-            eq(abuseReports.linkId, link.id)
-          )
-        )
-        .returning({ id: abuseReports.id })
-        .get();
-      if (!updatedReport) {
-        return NextResponse.json(
-          { error: "Report not found for this link." },
-          { status: 404 }
-        );
-      }
-    } else {
-      db.update(abuseReports)
-        .set({ status: "dismissed" })
+    db.transaction((tx) => {
+      tx.update(links)
+        .set({ status: "disabled", updatedAt: now })
+        .where(eq(links.id, link.id))
+        .run();
+      tx.update(abuseReports)
+        .set({ status: "resolved" })
         .where(eq(abuseReports.linkId, link.id))
         .run();
-    }
-    if (link.status === "flagged") {
-      db.update(links)
+    });
+  } else if (action === "restore_link") {
+    db.transaction((tx) => {
+      tx.update(links)
         .set({ status: "active", updatedAt: now })
         .where(eq(links.id, link.id))
         .run();
+      tx.update(abuseReports)
+        .set({ status: "dismissed" })
+        .where(eq(abuseReports.linkId, link.id))
+        .run();
+    });
+  } else if (action === "delete_link") {
+    db.delete(links).where(eq(links.id, link.id)).run();
+  } else if (action === "dismiss_report") {
+    const dismissError = db.transaction((tx) => {
+      if (reportId) {
+        const updatedReport = tx
+          .update(abuseReports)
+          .set({ status: "dismissed" })
+          .where(
+            and(
+              eq(abuseReports.id, reportId),
+              eq(abuseReports.linkId, link.id)
+            )
+          )
+          .returning({ id: abuseReports.id })
+          .get();
+        if (!updatedReport) {
+          return true;
+        }
+      } else {
+        tx.update(abuseReports)
+          .set({ status: "dismissed" })
+          .where(eq(abuseReports.linkId, link.id))
+          .run();
+      }
+      if (link.status === "flagged") {
+        tx.update(links)
+          .set({ status: "active", updatedAt: now })
+          .where(eq(links.id, link.id))
+          .run();
+      }
+      return false;
+    });
+    if (dismissError) {
+      return NextResponse.json(
+        { error: "Report not found for this link." },
+        { status: 404 }
+      );
     }
   } else if (action === "block_domain") {
     let hostname: string;
     try {
-      hostname = new URL(link.destinationUrl).hostname
+      const rawHost = new URL(link.destinationUrl).hostname
         .toLowerCase()
         .replace(/\.+$/, "");
+      hostname = (domainToASCII(rawHost) || rawHost).toLowerCase();
     } catch {
       return NextResponse.json(
         { error: "Cannot block domain: invalid destination URL." },
@@ -124,25 +136,27 @@ export async function POST(
       );
     }
 
-    db.insert(blockedDomains)
-      .values({
-        domain: hostname,
-        reason: `Blocked from moderation of /${link.slug}`,
-        createdAt: now,
-      })
-      .onConflictDoNothing()
-      .run();
-
-    if (link.ownerType === "public") {
-      db.update(links)
-        .set({ status: "disabled", updatedAt: now })
-        .where(eq(links.id, link.id))
+    db.transaction((tx) => {
+      tx.insert(blockedDomains)
+        .values({
+          domain: hostname,
+          reason: `Blocked from moderation of /${link.slug}`,
+          createdAt: now,
+        })
+        .onConflictDoNothing()
         .run();
-    }
-    db.update(abuseReports)
-      .set({ status: "resolved" })
-      .where(eq(abuseReports.linkId, link.id))
-      .run();
+
+      if (link.ownerType === "public") {
+        tx.update(links)
+          .set({ status: "disabled", updatedAt: now })
+          .where(eq(links.id, link.id))
+          .run();
+      }
+      tx.update(abuseReports)
+        .set({ status: "resolved" })
+        .where(eq(abuseReports.linkId, link.id))
+        .run();
+    });
   }
 
   return NextResponse.json(

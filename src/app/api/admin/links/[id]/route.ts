@@ -70,7 +70,7 @@ export async function PATCH(
       .get();
     if (collision && collision.id !== existing.id) {
       return NextResponse.json(
-        { error: `Slug "/${slugCheck.slug}" is already taken.` },
+        { error: `Ending "/${slugCheck.slug}" is already taken.` },
         { status: 409 }
       );
     }
@@ -100,7 +100,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         error:
-          "301 permanent redirects cannot be combined with expiration dates or click caps. Use 302 or 307.",
+          "Permanent links can't be combined with an expiration date or visit limit. Choose Standard or Temporary instead.",
       },
       { status: 400 }
     );

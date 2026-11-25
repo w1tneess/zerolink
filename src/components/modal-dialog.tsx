@@ -18,16 +18,39 @@ export function ModalDialog({
   children,
 }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
-    if (open && !dialog.open) {
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
+    if (open) {
+      previousFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+      const initialTarget =
+        dialog.querySelector<HTMLElement>("[data-initial-focus]") ??
+        dialog.querySelector<HTMLElement>("[autofocus]") ??
+        dialog.querySelector<HTMLElement>(
+          "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])"
+        );
+      initialTarget?.focus();
     }
+
+    return () => {
+      if (dialog.open) {
+        dialog.close();
+      }
+      const prev = previousFocusRef.current;
+      if (prev && prev.isConnected) {
+        requestAnimationFrame(() => prev.focus());
+      }
+      previousFocusRef.current = null;
+    };
   }, [open]);
 
   useEffect(() => {
@@ -61,11 +84,9 @@ export function ModalDialog({
       aria-labelledby={ariaLabelledBy}
       onClose={onClose}
       {...({ closedby: "any" } as Record<string, string>)}
-      className={`zl-dialog animate-modal m-auto w-[calc(100%-2rem)] ${maxWidthClass} rounded-3xl bg-[var(--bezel-outer)] p-2 text-[var(--text)] ring-1 ring-[var(--bezel-ring)]`}
+      className={`zl-dialog animate-modal m-auto w-[calc(100%-2rem)] ${maxWidthClass} rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] p-6 text-[var(--text)] shadow-[var(--shadow-float)]`}
     >
-      <div className="rounded-2xl bg-[var(--surface)] p-6 shadow-[var(--shadow-float),inset_0_1px_0_var(--inner-highlight)]">
-        {children}
-      </div>
+      {children}
     </dialog>
   );
 }

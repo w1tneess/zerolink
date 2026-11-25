@@ -50,39 +50,41 @@ export async function POST(request: NextRequest) {
   let inserted = 0;
   let skipped = 0;
 
-  for (const row of rows) {
-    const existing = db
-      .select({ id: links.id })
-      .from(links)
-      .where(eq(links.slug, row.slug))
-      .get();
-    if (existing) {
-      skipped++;
-      continue;
-    }
+  db.transaction((tx) => {
+    for (const row of rows) {
+      const existing = tx
+        .select({ id: links.id })
+        .from(links)
+        .where(eq(links.slug, row.slug))
+        .get();
+      if (existing) {
+        skipped++;
+        continue;
+      }
 
-    db.insert(links)
-      .values({
-        slug: row.slug,
-        destinationUrl: row.destinationUrl,
-        ownerType: "admin",
-        status: row.status,
-        redirectCode: resolveSafeRedirectCode(
-          row.redirectCode,
-          row.expiresAt,
-          row.maxClicks
-        ),
-        passwordHash: null,
-        clicks: 0,
-        maxClicks: row.maxClicks,
-        expiresAt: row.expiresAt,
-        note: row.note ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
-    inserted++;
-  }
+      tx.insert(links)
+        .values({
+          slug: row.slug,
+          destinationUrl: row.destinationUrl,
+          ownerType: "admin",
+          status: row.status,
+          redirectCode: resolveSafeRedirectCode(
+            row.redirectCode,
+            row.expiresAt,
+            row.maxClicks
+          ),
+          passwordHash: null,
+          clicks: 0,
+          maxClicks: row.maxClicks,
+          expiresAt: row.expiresAt,
+          note: row.note ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      inserted++;
+    }
+  });
 
   return NextResponse.json(
     { inserted, skipped, errors },

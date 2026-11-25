@@ -1,4 +1,5 @@
 import net from "node:net";
+import { domainToASCII } from "node:url";
 import { getEnv } from "@/lib/env";
 
 const MAX_URL_LENGTH = 4096;
@@ -95,46 +96,131 @@ function parseIpv4ToUint32(hostname: string): number | null {
   );
 }
 
+function parseIpv6ToBytes(ip: string): Uint8Array | null {
+  const doubleColonParts = ip.split("::");
+  if (doubleColonParts.length > 2) return null;
+
+  const parseSide = (side: string): number[] | null => {
+    if (!side) return [];
+    const tokens = side.split(":");
+    const hextets: number[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (!token) return null;
+      if (token.includes(".")) {
+        if (i !== tokens.length - 1) return null;
+        const v4 = parseIpv4ToUint32(token);
+        if (v4 === null) return null;
+        hextets.push((v4 >>> 16) & 0xffff, v4 & 0xffff);
+      } else if (/^[0-9a-f]{1,4}$/i.test(token)) {
+        hextets.push(Number.parseInt(token, 16));
+      } else {
+        return null;
+      }
+    }
+    return hextets;
+  };
+
+  let hextets: number[];
+  if (doubleColonParts.length === 2) {
+    const left = parseSide(doubleColonParts[0]);
+    const right = parseSide(doubleColonParts[1]);
+    if (!left || !right) return null;
+    const missing = 8 - (left.length + right.length);
+    if (missing < 1) return null;
+    hextets = [...left, ...Array<number>(missing).fill(0), ...right];
+  } else {
+    const parsed = parseSide(ip);
+    if (!parsed || parsed.length !== 8) return null;
+    hextets = parsed;
+  }
+
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 8; i++) {
+    bytes[i * 2] = (hextets[i] >>> 8) & 0xff;
+    bytes[i * 2 + 1] = hextets[i] & 0xff;
+  }
+  return bytes;
+}
+
+function bytesToIpv4Int(bytes: Uint8Array, offset: number): number {
+  return (
+    ((bytes[offset] << 24) |
+      (bytes[offset + 1] << 16) |
+      (bytes[offset + 2] << 8) |
+      bytes[offset + 3]) >>>
+    0
+  );
+}
+
 function isBlockedIpv6(hostname: string): boolean {
   const clean = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (net.isIPv6(clean) === false) return false;
 
-  // :: or ::1
-  if (clean === "::" || clean === "::1" || /^0+(:0+)*:0*1$/.test(clean)) {
+  const bytes = parseIpv6ToBytes(clean);
+  if (!bytes) return true;
+
+  const allZeroFirst12 = bytes.slice(0, 12).every((b) => b === 0);
+
+  // :: (unspecified), ::1 (loopback), and ::/96 (IPv4-compatible IPv6, e.g. ::127.0.0.1)
+  if (allZeroFirst12) {
+    const tailInt = bytesToIpv4Int(bytes, 12);
+    if (tailInt === 0 || tailInt === 1) return true;
+    return isBlockedIpv4Int(tailInt);
+  }
+
+  // ::ffff:0:0/96 (IPv4-mapped IPv6)
+  if (
+    bytes.slice(0, 10).every((b) => b === 0) &&
+    bytes[10] === 0xff &&
+    bytes[11] === 0xff
+  ) {
+    return isBlockedIpv4Int(bytesToIpv4Int(bytes, 12));
+  }
+
+  // ::ffff:0:0:0/96 (IPv4-translated IPv6)
+  if (
+    bytes.slice(0, 8).every((b) => b === 0) &&
+    bytes[8] === 0xff &&
+    bytes[9] === 0xff &&
+    bytes[10] === 0 &&
+    bytes[11] === 0
+  ) {
+    return isBlockedIpv4Int(bytesToIpv4Int(bytes, 12));
+  }
+
+  // 64:ff9b::/96 (NAT64 embedding IPv4)
+  if (
+    bytes[0] === 0x00 &&
+    bytes[1] === 0x64 &&
+    bytes[2] === 0xff &&
+    bytes[3] === 0x9b &&
+    bytes.slice(4, 12).every((b) => b === 0)
+  ) {
+    return isBlockedIpv4Int(bytesToIpv4Int(bytes, 12));
+  }
+
+  // 100::/64 (Discard-Only)
+  if (
+    bytes[0] === 0x01 &&
+    bytes[1] === 0x00 &&
+    bytes.slice(2, 8).every((b) => b === 0)
+  ) {
     return true;
   }
 
-  // IPv4-mapped IPv6 e.g. ::ffff:127.0.0.1 or ::ffff:7f00:1
-  if (clean.startsWith("::ffff:")) {
-    const tail = clean.slice(7);
-    const v4 = parseIpv4ToUint32(tail);
-    if (v4 !== null) {
-      return isBlockedIpv4Int(v4);
-    }
-    const hexParts = tail.split(":");
-    if (hexParts.length === 2) {
-      const hi = Number.parseInt(hexParts[0], 16);
-      const lo = Number.parseInt(hexParts[1], 16);
-      if (!Number.isNaN(hi) && !Number.isNaN(lo)) {
-        const combined = ((hi << 16) | lo) >>> 0;
-        return isBlockedIpv4Int(combined);
-      }
-    }
+  // fc00::/7 (Unique Local Addresses)
+  if ((bytes[0] & 0xfe) === 0xfc) {
     return true;
   }
 
-  // Unique local addresses fc00::/7 (fc.. or fd..)
-  if (/^f[cd][0-9a-f]{2}:/.test(clean) || clean === "fc00::" || clean === "fd00::") {
+  // fe80::/10 (Link-local)
+  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) {
     return true;
   }
 
-  // Link-local fe80::/10 (fe80..febf)
-  if (/^fe[89ab][0-9a-f]:/.test(clean)) {
-    return true;
-  }
-
-  // Multicast ff00::/8
-  if (/^ff[0-9a-f]{2}:/.test(clean)) {
+  // ff00::/8 (Multicast)
+  if (bytes[0] === 0xff) {
     return true;
   }
 
@@ -170,9 +256,12 @@ export function matchesDomainBlocklist(
   hostname: string,
   blockedList: string[]
 ): boolean {
-  const cleanHost = hostname.toLowerCase().replace(/\.+$/, "");
+  const cleanHost = (domainToASCII(hostname) || hostname)
+    .toLowerCase()
+    .replace(/\.+$/, "");
   for (const blocked of blockedList) {
-    const cleanBlocked = blocked.toLowerCase().trim().replace(/\.+$/, "");
+    const trimmed = blocked.toLowerCase().trim().replace(/\.+$/, "");
+    const cleanBlocked = (domainToASCII(trimmed) || trimmed).toLowerCase();
     if (!cleanBlocked) continue;
     if (
       cleanHost === cleanBlocked ||
@@ -209,16 +298,16 @@ export function validateDestinationUrl(
   const trimmed = rawInput.trim();
 
   if (!trimmed) {
-    return { valid: false, error: "Destination URL is required." };
+    return { valid: false, error: "Please paste a web link first." };
   }
   if (trimmed.length > MAX_URL_LENGTH) {
     return {
       valid: false,
-      error: `URL exceeds maximum length of ${MAX_URL_LENGTH} characters.`,
+      error: `That link is too long (maximum ${MAX_URL_LENGTH} characters).`,
     };
   }
   if (CONTROL_CHAR_REGEX.test(trimmed)) {
-    return { valid: false, error: "URL contains invalid control characters." };
+    return { valid: false, error: "That link contains unsupported characters." };
   }
 
   let parsed: URL;
@@ -227,34 +316,36 @@ export function validateDestinationUrl(
   } catch {
     return {
       valid: false,
-      error: "Please enter a valid URL starting with http:// or https://.",
+      error: "Please enter a valid web link starting with https:// or http://.",
     };
   }
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return {
       valid: false,
-      error: `Protocol "${parsed.protocol}" is not permitted. Only http:// and https:// are allowed.`,
+      error: "Only standard web links (https:// or http://) are supported.",
     };
   }
 
   if (parsed.username || parsed.password) {
     return {
       valid: false,
-      error: "URLs containing embedded username or password credentials are not allowed.",
+      error: "Links with an embedded username or password aren't allowed.",
     };
   }
 
   const hostname = parsed.hostname.toLowerCase().replace(/\.+$/, "");
   if (!hostname) {
-    return { valid: false, error: "URL must include a valid hostname." };
+    return {
+      valid: false,
+      error: "Please enter a full website address (for example, example.com).",
+    };
   }
 
   if (!options.allowPrivateHosts && isPrivateOrReservedHost(hostname)) {
     return {
       valid: false,
-      error:
-        "Private, loopback, link-local, and internal network addresses are blocked.",
+      error: "Local or private network addresses can't be shortened.",
     };
   }
 
@@ -271,9 +362,16 @@ export function validateDestinationUrl(
   if (options.requestHost) {
     const reqHost = options.requestHost.trim().toLowerCase();
     selfHosts.add(reqHost);
-    const reqHostnameOnly = reqHost.split(":")[0];
-    if (reqHostnameOnly) {
-      selfHosts.add(reqHostnameOnly);
+    try {
+      const reqUrl = new URL(`http://${reqHost}`);
+      if (reqUrl.hostname) {
+        selfHosts.add(reqUrl.hostname.toLowerCase());
+      }
+    } catch {
+      const reqHostnameOnly = reqHost.split(":")[0];
+      if (reqHostnameOnly) {
+        selfHosts.add(reqHostnameOnly);
+      }
     }
   }
 
@@ -281,7 +379,7 @@ export function validateDestinationUrl(
   if (selfHosts.has(targetHostWithPort) || selfHosts.has(hostname)) {
     return {
       valid: false,
-      error: "Self-referential URLs pointing to this shortener are not allowed.",
+      error: "You can't shorten a link that already points to this site.",
     };
   }
 
@@ -291,7 +389,7 @@ export function validateDestinationUrl(
   ) {
     return {
       valid: false,
-      error: "This destination domain is on the administrator blocklist.",
+      error: "This website isn't allowed on this link shortener.",
     };
   }
 

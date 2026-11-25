@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { fetchAndSolvePow } from "@/lib/client-pow";
-import { DoubleBezel } from "./double-bezel";
 import { IconArrowRight, IconSpinner } from "./icons";
 
 export function ReportForm({ initialSlug = "" }: { initialSlug?: string }) {
@@ -15,9 +14,11 @@ export function ReportForm({ initialSlug = "" }: { initialSlug?: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const slugInputRef = useRef<HTMLInputElement>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError(null);
     setSuccess(null);
     setLoading(true);
@@ -38,6 +39,7 @@ export function ReportForm({ initialSlug = "" }: { initialSlug?: string }) {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Could not submit report");
+        slugInputRef.current?.focus();
         return;
       }
       setSuccess(data.message);
@@ -51,7 +53,15 @@ export function ReportForm({ initialSlug = "" }: { initialSlug?: string }) {
   }
 
   return (
-    <DoubleBezel innerClassName="p-6 sm:p-8">
+    <div className="rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] p-6 sm:p-8">
+      <div className="mb-6 flex items-center justify-between gap-4 border-b border-[var(--line)] pb-4 text-xs">
+        <span className="truncate font-mono text-[var(--text)]">
+          /{slugOrUrl.trim().replace(/^\/+/, "") || "short-link"}
+        </span>
+        <span className="shrink-0 text-[var(--accent-ink)]">
+          Private review
+        </span>
+      </div>
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="sr-only" aria-hidden="true">
           <label htmlFor="report-website-hp">Website</label>
@@ -71,16 +81,26 @@ export function ReportForm({ initialSlug = "" }: { initialSlug?: string }) {
             htmlFor="slug-or-url"
             className="block text-sm font-medium text-[var(--text)]"
           >
-            Short link or slug
+            Short link or ending
           </label>
           <input
+            ref={slugInputRef}
             id="slug-or-url"
+            name="slugOrUrl"
             type="text"
             required
-            placeholder="aB3x9Kq"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "report-error" : undefined}
+            placeholder="e.g. a8kP2m or full short link"
             value={slugOrUrl}
-            onChange={(e) => setSlugOrUrl(e.target.value)}
-            className="h-11 w-full rounded-xl bg-[var(--surface-elevated)] px-4 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] placeholder:text-[var(--text-muted)] focus:ring-[var(--accent)]"
+            onChange={(e) => {
+              setSlugOrUrl(e.target.value);
+              if (error) setError(null);
+            }}
+            className="h-11 w-full rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-4 font-mono text-base text-[var(--text)] placeholder:font-sans placeholder:text-[var(--text-muted)] focus:border-[var(--accent-ink)] sm:text-sm"
           />
         </div>
 
@@ -89,10 +109,11 @@ export function ReportForm({ initialSlug = "" }: { initialSlug?: string }) {
             htmlFor="abuse-reason"
             className="block text-sm font-medium text-[var(--text)]"
           >
-            Category
+            What&apos;s the issue?
           </label>
           <select
             id="abuse-reason"
+            name="reason"
             value={reason}
             onChange={(e) =>
               setReason(
@@ -104,13 +125,13 @@ export function ReportForm({ initialSlug = "" }: { initialSlug?: string }) {
                   | "other"
               )
             }
-            className="h-11 w-full rounded-xl bg-[var(--surface-elevated)] px-4 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] focus:ring-[var(--accent)]"
+            className="h-11 w-full rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-4 text-base text-[var(--text)] focus:border-[var(--accent-ink)] sm:text-sm"
           >
-            <option value="phishing">Phishing or credential theft</option>
-            <option value="malware">Malware or harmful download</option>
-            <option value="spam">Spam or unsolicited bulk links</option>
-            <option value="illegal">Illegal content</option>
-            <option value="other">Other abuse</option>
+            <option value="phishing">Scam or fake login page</option>
+            <option value="malware">Harmful download or virus</option>
+            <option value="spam">Spam or unwanted messages</option>
+            <option value="illegal">Illegal or harmful content</option>
+            <option value="other">Something else</option>
           </select>
         </div>
 
@@ -119,45 +140,51 @@ export function ReportForm({ initialSlug = "" }: { initialSlug?: string }) {
             htmlFor="abuse-details"
             className="block text-sm font-medium text-[var(--text)]"
           >
-            Context
+            Extra details (optional)
           </label>
           <textarea
             id="abuse-details"
+            name="details"
             rows={3}
             maxLength={500}
-            placeholder="Optional notes (max 500 chars)"
+            placeholder="Share any helpful context (up to 500 characters)"
             value={details}
             onChange={(e) => setDetails(e.target.value)}
-            className="w-full rounded-xl bg-[var(--surface-elevated)] p-4 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] placeholder:text-[var(--text-muted)] focus:ring-[var(--accent)]"
+            className="w-full rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] p-4 text-base text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-ink)] sm:text-sm"
           />
         </div>
 
         {error && (
           <div
+            id="report-error"
             role="alert"
-            className="rounded-xl bg-[var(--negative-soft)] px-4 py-3 text-xs text-[var(--negative)] ring-1 ring-[var(--negative)]/20"
+            className="rounded-lg border border-[var(--negative)]/40 bg-[var(--negative-soft)] px-4 py-3 text-xs text-[var(--negative)]"
           >
             {error}
           </div>
         )}
 
-        {success && (
-          <div className="rounded-xl bg-[var(--positive-soft)] px-4 py-3 text-xs text-[var(--positive)] ring-1 ring-[var(--positive)]/20">
-            {success}
-          </div>
-        )}
+        <div role="status" className={success ? "rounded-lg border border-[var(--positive)]/40 bg-[var(--positive-soft)] px-4 py-3 text-xs text-[var(--positive)]" : "sr-only"}>
+          {success ?? ""}
+        </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="group inline-flex h-12 items-center gap-3 rounded-full bg-[var(--accent)] pl-6 pr-2 text-sm font-medium text-[var(--accent-fg)] transition-[background-color,opacity,transform] duration-150 ease-[var(--ease-agency)] hover:bg-[var(--accent-hover)] active:scale-[0.97] disabled:opacity-50"
-        >
-          <span>{loading ? "Submitting..." : "Submit anonymous report"}</span>
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 transition-transform duration-150 ease-[var(--ease-agency)] group-hover:translate-x-0.5">
-            {loading ? <IconSpinner size={16} /> : <IconArrowRight size={16} />}
+        <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+          <button
+            type="submit"
+            aria-disabled={loading}
+            className="zl-btn-primary inline-flex h-11 items-center gap-3 rounded-lg px-5 text-sm font-medium aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+          >
+            <span>{loading ? "Sending..." : "Send anonymous report"}</span>
+            <span className="zl-btn-arrow inline-flex items-center">
+              {loading ? <IconSpinner size={15} /> : <IconArrowRight size={15} />}
+            </span>
+          </button>
+
+          <span className="text-xs text-[var(--text-muted)]">
+            No personal details saved
           </span>
-        </button>
+        </div>
       </form>
-    </DoubleBezel>
+    </div>
   );
 }

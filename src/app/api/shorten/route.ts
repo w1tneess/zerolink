@@ -33,13 +33,36 @@ const shortenSchema = z.object({
   }),
 });
 
+function resolveShortBaseUrl(request: NextRequest): string {
+  const fallback = getEnv().APP_BASE_URL.replace(/\/+$/, "");
+  const rawOrigin = request.headers.get("origin");
+  if (!rawOrigin || rawOrigin === "null") {
+    return fallback;
+  }
+  try {
+    const originUrl = new URL(rawOrigin);
+    if (originUrl.protocol !== "http:" && originUrl.protocol !== "https:") {
+      return fallback;
+    }
+    const reqHost = request.headers.get("host")?.trim().toLowerCase();
+    const fallbackHost = new URL(fallback).host.toLowerCase();
+    const originHost = originUrl.host.toLowerCase();
+    if (originHost === fallbackHost || (reqHost && originHost === reqHost)) {
+      return originUrl.origin;
+    }
+  } catch {
+    return fallback;
+  }
+  return fallback;
+}
+
 export async function POST(request: NextRequest) {
   const ip = extractClientIp(request);
   const rate = checkRateLimit("public_shorten", ip, 20, 15 * 60 * 1000);
   if (!rate.allowed) {
     return NextResponse.json(
       {
-        error: `Rate limit exceeded. Please retry in ${rate.retryAfterSeconds}s.`,
+        error: `Too many requests right now. Please wait ${rate.retryAfterSeconds}s and try again.`,
       },
       {
         status: 429,
@@ -52,13 +75,16 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Something looked off in that request. Please try again." },
+      { status: 400 }
+    );
   }
 
   const parsed = shortenSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Invalid request parameters." },
+      { error: "Please check your link and try again." },
       { status: 400 }
     );
   }
@@ -68,7 +94,7 @@ export async function POST(request: NextRequest) {
   // Reject automated bots filling the hidden honeypot field
   if (data.website && data.website.trim().length > 0) {
     return NextResponse.json(
-      { error: "Request rejected by spam protection." },
+      { error: "Request blocked by spam protection." },
       { status: 400 }
     );
   }
@@ -76,7 +102,7 @@ export async function POST(request: NextRequest) {
   const powCheck = verifyPowSolution(data.pow);
   if (!powCheck.valid) {
     return NextResponse.json(
-      { error: powCheck.reason ?? "Proof-of-Work verification failed." },
+      { error: powCheck.reason ?? "Security check failed. Please try again." },
       { status: 403 }
     );
   }
@@ -84,7 +110,7 @@ export async function POST(request: NextRequest) {
   const appSettings = await getAppSettings();
   if (!appSettings.publicCreationEnabled) {
     return NextResponse.json(
-      { error: "Public link creation is currently paused by the administrator." },
+      { error: "Creating new public links is paused by the site owner right now." },
       { status: 403 }
     );
   }
@@ -95,7 +121,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Custom vanity slugs are reserved for the owner. Leave slug blank for a random short link.",
+            "Custom endings are reserved for the site owner right now. Leave it blank for an automatic short link.",
         },
         { status: 403 }
       );
@@ -106,7 +132,7 @@ export async function POST(request: NextRequest) {
     }
     if (getLinkBySlug(slugCheck.slug)) {
       return NextResponse.json(
-        { error: "That custom slug is already taken." },
+        { error: "That custom ending is already taken. Try another one." },
         { status: 409 }
       );
     }
@@ -142,15 +168,14 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof SlugTakenError) {
       return NextResponse.json(
-        { error: "That custom slug is already taken." },
+        { error: "That custom ending is already taken. Try another one." },
         { status: 409 }
       );
     }
     throw err;
   }
 
-  const baseUrl =
-    request.headers.get("origin") || getEnv().APP_BASE_URL.replace(/\/+$/, "");
+  const baseUrl = resolveShortBaseUrl(request);
   const shortUrl = `${baseUrl}/${created.slug}`;
   const previewUrl = `${baseUrl}/${created.slug}+`;
   const qrSvg = await generateQrSvg(shortUrl);

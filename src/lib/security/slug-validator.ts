@@ -21,28 +21,36 @@ export interface SlugValidationResult {
   error?: string;
 }
 
+export function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function validateCustomSlug(rawSlug: string): SlugValidationResult {
   const slug = rawSlug.trim();
   if (!slug) {
-    return { valid: false, error: "Slug cannot be empty." };
+    return { valid: false, error: "Custom ending cannot be empty." };
   }
   if (slug.endsWith("+")) {
     return {
       valid: false,
-      error: "Slug cannot end with '+' (reserved for link preview mode).",
+      error: "Custom endings can't end with '+' because '+' is used to preview links.",
     };
   }
   if (!CUSTOM_SLUG_REGEX.test(slug)) {
     return {
       valid: false,
       error:
-        "Slug must be 2–64 characters using only letters, numbers, '-' or '_'.",
+        "Use 2 to 64 characters with only letters, numbers, '-' or '_'.",
     };
   }
   if (RESERVED_SLUGS.has(slug.toLowerCase())) {
     return {
       valid: false,
-      error: `Slug "${slug}" is reserved for system routes.`,
+      error: `"${slug}" is reserved for a built-in page. Please pick another ending.`,
     };
   }
   return { valid: true, slug };

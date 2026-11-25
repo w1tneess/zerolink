@@ -42,10 +42,10 @@ export function hashEphemeralClientKey(
 export function extractClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
+    const first = forwarded.split(",")[0]?.trim().slice(0, 64);
     if (first) return first;
   }
-  const realIp = request.headers.get("x-real-ip")?.trim();
+  const realIp = request.headers.get("x-real-ip")?.trim().slice(0, 64);
   if (realIp) return realIp;
   return "127.0.0.1";
 }
@@ -96,9 +96,11 @@ export function checkRateLimit(
     ? existing.timestamps.filter((t) => t > cutoff)
     : [];
 
-  if (valid.length >= limit) {
+  if (limit <= 0 || valid.length >= limit) {
+    // Re-insert so active keys move to the tail (LRU) and oldest entries stay at head
+    if (existing) buckets.delete(key);
     buckets.set(key, { timestamps: valid, expiresAt: now + windowMs });
-    const oldest = valid[0];
+    const oldest = valid[0] ?? now;
     const retryAfterSeconds = Math.max(
       1,
       Math.ceil((oldest + windowMs - now) / 1000)
@@ -111,6 +113,7 @@ export function checkRateLimit(
   }
 
   valid.push(now);
+  if (existing) buckets.delete(key);
   buckets.set(key, { timestamps: valid, expiresAt: now + windowMs });
   return {
     allowed: true,

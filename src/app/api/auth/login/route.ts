@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   if (!rate.allowed) {
     return NextResponse.json(
       {
-        error: `Too many login attempts. Please wait ${rate.retryAfterSeconds}s.`,
+        error: `Too many sign-in attempts. Please wait ${rate.retryAfterSeconds}s and try again.`,
       },
       {
         status: 429,
@@ -30,13 +30,16 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Something looked off in that request. Please try again." },
+      { status: 400 }
+    );
   }
 
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Password is required." },
+      { error: "Please enter your password." },
       { status: 400 }
     );
   }
@@ -45,8 +48,7 @@ export async function POST(request: NextRequest) {
   if (!check.configured) {
     return NextResponse.json(
       {
-        error:
-          "ADMIN_PASSWORD_HASH is not configured on the server. Generate one with `npm run hash-password` and add it to .env.",
+        error: "Owner sign-in isn't set up on this server yet.",
       },
       { status: 503 }
     );
@@ -54,12 +56,22 @@ export async function POST(request: NextRequest) {
 
   if (!check.ok) {
     return NextResponse.json(
-      { error: "Invalid owner password." },
+      { error: "Incorrect password. Please try again." },
       { status: 401 }
     );
   }
 
-  const token = createAdminSessionToken();
+  let token: string;
+  try {
+    token = createAdminSessionToken();
+  } catch {
+    return NextResponse.json(
+      {
+        error: "Owner session settings aren't configured on this server yet.",
+      },
+      { status: 503 }
+    );
+  }
   const response = NextResponse.json(
     { ok: true },
     { status: 200, headers: { "Cache-Control": "no-store" } }

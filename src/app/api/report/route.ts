@@ -6,6 +6,7 @@ import { abuseReports, links } from "@/db/schema";
 import { checkRateLimit, extractClientIp } from "@/lib/rate-limit";
 import { verifyPowSolution } from "@/lib/pow";
 import { getLinkBySlug } from "@/lib/links/service";
+import { safeDecodeURIComponent } from "@/lib/security/slug-validator";
 
 const reportSchema = z.object({
   slugOrUrl: z.string().min(1).max(512),
@@ -24,16 +25,22 @@ const reportSchema = z.object({
 
 function extractSlug(input: string): string {
   const trimmed = input.trim();
+  let pathPart = trimmed;
   try {
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      const u = new URL(trimmed);
-      const seg = u.pathname.replace(/^\/+/, "").split("/")[0] ?? "";
-      return seg.replace(/\+$/, "");
+      pathPart = new URL(trimmed).pathname;
     }
   } catch {
     // fall through to path parsing
   }
-  return trimmed.replace(/^\/+/, "").split("?")[0].replace(/\+$/, "");
+  const cleanPath = pathPart.split("?")[0].split("#")[0].replace(/^\/+/, "");
+  const segments = cleanPath.split("/").filter(Boolean);
+  if (segments.length === 0) return "";
+  const rawSeg =
+    (segments[0] === "inspect" || segments[0] === "unlock") && segments[1]
+      ? segments[1]
+      : segments[0];
+  return safeDecodeURIComponent(rawSeg).replace(/\+$/, "");
 }
 
 export async function POST(request: NextRequest) {
@@ -42,7 +49,7 @@ export async function POST(request: NextRequest) {
   if (!rate.allowed) {
     return NextResponse.json(
       {
-        error: `Rate limit exceeded. Please retry in ${rate.retryAfterSeconds}s.`,
+        error: `Too many reports right now. Please wait ${rate.retryAfterSeconds}s and try again.`,
       },
       {
         status: 429,
@@ -55,13 +62,16 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Something looked off in that request. Please try again." },
+      { status: 400 }
+    );
   }
 
   const parsed = reportSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Please provide a valid link slug and abuse category." },
+      { error: "Please enter a short link and choose a reason for your report." },
       { status: 400 }
     );
   }
@@ -70,7 +80,7 @@ export async function POST(request: NextRequest) {
 
   if (data.website && data.website.trim().length > 0) {
     return NextResponse.json(
-      { error: "Request rejected by spam protection." },
+      { error: "Request blocked by spam protection." },
       { status: 400 }
     );
   }
@@ -78,7 +88,7 @@ export async function POST(request: NextRequest) {
   const powCheck = verifyPowSolution(data.pow);
   if (!powCheck.valid) {
     return NextResponse.json(
-      { error: powCheck.reason ?? "Proof-of-Work verification failed." },
+      { error: powCheck.reason ?? "Security check failed. Please try again." },
       { status: 403 }
     );
   }
@@ -86,7 +96,7 @@ export async function POST(request: NextRequest) {
   const slug = extractSlug(data.slugOrUrl);
   if (!slug) {
     return NextResponse.json(
-      { error: "Could not determine a valid short link slug." },
+      { error: "We couldn't read that short link. Paste the full link or its short ending." },
       { status: 400 }
     );
   }
@@ -94,7 +104,7 @@ export async function POST(request: NextRequest) {
   const targetLink = getLinkBySlug(slug);
   if (!targetLink) {
     return NextResponse.json(
-      { error: `No short link found for "/${slug}".` },
+      { error: `We couldn't find a short link for "/${slug}".` },
       { status: 404 }
     );
   }
@@ -102,30 +112,32 @@ export async function POST(request: NextRequest) {
   const db = getDb();
   const now = Date.now();
 
-  // Store report with ZERO reporter IP, User-Agent, or identity metadata
-  db.insert(abuseReports)
-    .values({
-      linkId: targetLink.id,
-      reason: data.reason,
-      details: data.details?.trim() || null,
-      status: "open",
-      createdAt: now,
-    })
-    .run();
-
-  // Personal admin links must never be disabled or auto-flagged by public reports
-  if (targetLink.ownerType === "public" && targetLink.status === "active") {
-    db.update(links)
-      .set({ status: "flagged", updatedAt: now })
-      .where(eq(links.id, targetLink.id))
+  db.transaction((tx) => {
+    // Store report with ZERO reporter IP, User-Agent, or identity metadata
+    tx.insert(abuseReports)
+      .values({
+        linkId: targetLink.id,
+        reason: data.reason,
+        details: data.details?.trim() || null,
+        status: "open",
+        createdAt: now,
+      })
       .run();
-  }
+
+    // Personal admin links must never be disabled or auto-flagged by public reports
+    if (targetLink.ownerType === "public" && targetLink.status === "active") {
+      tx.update(links)
+        .set({ status: "flagged", updatedAt: now })
+        .where(eq(links.id, targetLink.id))
+        .run();
+    }
+  });
 
   return NextResponse.json(
     {
       ok: true,
       message:
-        "Report received anonymously. No reporter IP, cookie, or identity was logged.",
+        "Thanks — your report was sent anonymously. No personal details or IP address were saved.",
     },
     { status: 201, headers: { "Cache-Control": "no-store" } }
   );

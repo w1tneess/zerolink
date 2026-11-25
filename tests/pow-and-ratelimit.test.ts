@@ -106,4 +106,18 @@ describe("Zero-Tracking Ephemeral Rate Limiter", () => {
     expect(afterExpiry.allowed).toBe(true);
     expect(getRateLimiterStateForTesting().bucketCount).toBe(1);
   });
+
+  it("prunes expired buckets behind renewed active buckets via LRU order", () => {
+    const now = 1_700_000_000_000;
+    // Create ip-1 and ip-2 at t=now (window 1000ms)
+    expect(checkRateLimit("b", "198.51.100.10", 5, 1000, now, 2).allowed).toBe(true);
+    expect(checkRateLimit("b", "198.51.100.11", 5, 1000, now + 50, 2).allowed).toBe(true);
+
+    // Renew ip-1 at t=now+600 so ip-2 becomes oldest
+    expect(checkRateLimit("b", "198.51.100.10", 5, 1000, now + 600, 2).allowed).toBe(true);
+
+    // At t=now+1100, ip-2 is expired while ip-1 is still active; ip-3 should evict expired ip-2
+    expect(checkRateLimit("b", "198.51.100.12", 5, 1000, now + 1100, 2).allowed).toBe(true);
+    expect(getRateLimiterStateForTesting().bucketCount).toBe(2);
+  });
 });

@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": 'attachment; filename="personal-links.csv"',
+        "Content-Security-Policy": "sandbox",
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "no-store",
       },
     });
@@ -42,6 +44,7 @@ export async function GET(request: NextRequest) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Content-Disposition": 'attachment; filename="personal-links.json"',
+      "X-Content-Type-Options": "nosniff",
       "Cache-Control": "no-store",
     },
   });

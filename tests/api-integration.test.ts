@@ -21,6 +21,7 @@ import { PATCH as adminLinkPatch } from "@/app/api/admin/links/[id]/route";
 import { GET as adminModGet } from "@/app/api/admin/moderation/route";
 import { POST as adminModActionPost } from "@/app/api/admin/moderation/[id]/route";
 import { GET as adminExportGet } from "@/app/api/admin/links/export/route";
+import { POST as adminBlocklistPost } from "@/app/api/admin/blocklist/route";
 import { GET as redirectGet } from "@/app/[slug]/route";
 import InspectLinkPage from "@/app/inspect/[slug]/page";
 import { getLinkBySlug } from "@/lib/links/service";
@@ -433,5 +434,81 @@ describe("API Integration & Dual-Mode Security", () => {
   it("keeps unused helper imports exercised cleanly", () => {
     expect(ADMIN_SESSION_COOKIE).toBe("ls_admin_session");
     expect(typeof adminLinksPost).toBe("function");
+  });
+
+  it("ignores spoofed Origin headers on /api/shorten and enforces maxClicks and safe decode", async () => {
+    const pow = solvePowChallenge(issuePowChallenge(8));
+    const spoofRes = await shortenPost(
+      new NextRequest("https://short.test/api/shorten", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          host: "short.test",
+          origin: "https://evil-phish.example",
+        },
+        body: JSON.stringify({
+          url: "https://example.org/safe",
+          website: "",
+          pow,
+        }),
+      })
+    );
+    expect(spoofRes.status).toBe(201);
+    const spoofData = await spoofRes.json();
+    expect(spoofData.shortUrl.startsWith("https://short.test/")).toBe(true);
+    expect(spoofData.qrSvg).not.toContain("evil-phish");
+
+    // Atomic maxClicks check
+    const { createLinkRecord } = await import("@/lib/links/service");
+    createLinkRecord({
+      slug: "one-shot",
+      destinationUrl: "https://example.org/once",
+      ownerType: "admin",
+      maxClicks: 1,
+      redirectCode: 302,
+    });
+    const r1 = await redirectGet(new NextRequest("https://short.test/one-shot"), {
+      params: Promise.resolve({ slug: "one-shot" }),
+    });
+    expect(r1.status).toBe(302);
+    const r2 = await redirectGet(new NextRequest("https://short.test/one-shot"), {
+      params: Promise.resolve({ slug: "one-shot" }),
+    });
+    expect(r2.status).toBe(410);
+    expect(getLinkBySlug("one-shot")?.clicks).toBe(1);
+
+    // Malformed percent-encoding in /inspect/[slug] does not throw URIError
+    await expect(
+      InspectLinkPage({ params: Promise.resolve({ slug: "%E0%A4%A" }) })
+    ).resolves.toBeTruthy();
+
+    // Report accepts /inspect/<slug> URLs and admin blocklist validates domain syntax
+    const powRep = solvePowChallenge(issuePowChallenge(8));
+    const repInspect = await reportPost(
+      new NextRequest("https://short.test/api/report", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          slugOrUrl: "https://short.test/inspect/one-shot",
+          reason: "spam",
+          website: "",
+          pow: powRep,
+        }),
+      })
+    );
+    expect(repInspect.status).toBe(201);
+
+    const token = createAdminSessionToken();
+    const badBlock = await adminBlocklistPost(
+      new NextRequest("https://short.test/api/admin/blocklist", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: `${ADMIN_SESSION_COOKIE}=${token}`,
+        },
+        body: JSON.stringify({ domain: "invalid domain@example" }),
+      })
+    );
+    expect(badBlock.status).toBe(400);
   });
 });

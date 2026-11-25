@@ -91,9 +91,9 @@ const importRowSchema = z.object({
     .optional()
     .transform((v) => {
       if (v === null || v === undefined || v === "") return null;
-      if (typeof v === "number") return Number.isFinite(v) ? v : null;
+      if (typeof v === "number") return Number.isFinite(v) && v > 0 ? v : null;
       const ts = Date.parse(v);
-      return Number.isFinite(ts) ? ts : null;
+      return Number.isFinite(ts) && ts > 0 ? ts : null;
     }),
   note: z.string().max(500).nullable().optional(),
 });
@@ -177,6 +177,12 @@ export function parseLinksImport(
       if (item && typeof item === "object") {
         rawObjects.push(item as Record<string, unknown>);
       }
+      if (rawObjects.length > 10_000) {
+        return {
+          rows: [],
+          errors: ["Import exceeds maximum limit of 10,000 rows per batch."],
+        };
+      }
     }
   } else {
     const matrix = parseCsvLines(content);
@@ -184,6 +190,12 @@ export function parseLinksImport(
       return {
         rows: [],
         errors: ["CSV import must include a header row and at least one data row."],
+      };
+    }
+    if (matrix.length - 1 > 10_000) {
+      return {
+        rows: [],
+        errors: ["Import exceeds maximum limit of 10,000 rows per batch."],
       };
     }
     const headers = matrix[0].map((h) => h.trim().toLowerCase());

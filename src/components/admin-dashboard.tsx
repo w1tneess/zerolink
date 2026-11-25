@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ModalDialog } from "./modal-dialog";
-import { DoubleBezel } from "./double-bezel";
 import {
   IconArrowRight,
   IconArrowUpRight,
@@ -95,7 +94,6 @@ export function AdminDashboard() {
     text: string;
   } | null>(null);
 
-  // Create form state
   const [slug, setSlug] = useState("");
   const [destinationUrl, setDestinationUrl] = useState("");
   const [redirectCode, setRedirectCode] = useState<301 | 302 | 307>(302);
@@ -105,12 +103,10 @@ export function AdminDashboard() {
   const [note, setNote] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Quick-Create Cmd/Ctrl+K modal
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickSlug, setQuickSlug] = useState("");
   const [quickUrl, setQuickUrl] = useState("");
 
-  // Edit modal
   const [editing, setEditing] = useState<PersonalLink | null>(null);
   const [editSlug, setEditSlug] = useState("");
   const [editUrl, setEditUrl] = useState("");
@@ -120,14 +116,22 @@ export function AdminDashboard() {
   const [editPassword, setEditPassword] = useState("");
   const [editClearPassword, setEditClearPassword] = useState(false);
 
-  // Import state
   const [showImport, setShowImport] = useState(false);
   const [importFormat, setImportFormat] = useState<"json" | "csv">("json");
   const [importContent, setImportContent] = useState("");
+  const [importing, setImporting] = useState(false);
 
-  // Blocklist form
   const [newDomain, setNewDomain] = useState("");
   const [newDomainReason, setNewDomainReason] = useState("");
+  const [expiryHoursDraft, setExpiryHoursDraft] = useState("720");
+
+  const [confirmDelete, setConfirmDelete] = useState<{
+    kind: "personal" | "moderation";
+    id: number;
+    slug: string;
+    reportId?: number;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
@@ -169,6 +173,9 @@ export function AdminDashboard() {
       setReports(data.reports);
       setBlocklist(data.domains);
       setSettings(data.settings);
+      if (data.settings) {
+        setExpiryHoursDraft(String(data.settings.defaultPublicExpiryHours));
+      }
     } catch {
       setBanner({ type: "err", text: "Failed to load workspace data" });
     } finally {
@@ -186,6 +193,9 @@ export function AdminDashboard() {
         setReports(data.reports);
         setBlocklist(data.domains);
         setSettings(data.settings);
+        if (data.settings) {
+          setExpiryHoursDraft(String(data.settings.defaultPublicExpiryHours));
+        }
       })
       .catch(() => {
         if (active) {
@@ -205,9 +215,6 @@ export function AdminDashboard() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setQuickOpen((v) => !v);
-      } else if (e.key === "Escape") {
-        setQuickOpen(false);
-        setEditing(null);
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -222,6 +229,7 @@ export function AdminDashboard() {
 
   async function handleCreateLink(e: FormEvent) {
     e.preventDefault();
+    if (creating) return;
     setBanner(null);
     setCreating(true);
 
@@ -264,6 +272,8 @@ export function AdminDashboard() {
         text: `Created personal link /${data.link.slug}`,
       });
       await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error while creating link" });
     } finally {
       setCreating(false);
     }
@@ -272,25 +282,29 @@ export function AdminDashboard() {
   async function handleQuickCreate(e: FormEvent) {
     e.preventDefault();
     setBanner(null);
-    const res = await fetch("/api/admin/links", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        slug: quickSlug.trim() || undefined,
-        destinationUrl: quickUrl.trim(),
-        redirectCode: 302,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setBanner({ type: "err", text: data.error || "Quick create failed" });
-      return;
+    try {
+      const res = await fetch("/api/admin/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: quickSlug.trim() || undefined,
+          destinationUrl: quickUrl.trim(),
+          redirectCode: 302,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: "err", text: data.error || "Quick create failed" });
+        return;
+      }
+      setQuickSlug("");
+      setQuickUrl("");
+      setQuickOpen(false);
+      setBanner({ type: "ok", text: `Created /${data.link.slug}` });
+      await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error during quick create" });
     }
-    setQuickSlug("");
-    setQuickUrl("");
-    setQuickOpen(false);
-    setBanner({ type: "ok", text: `Created /${data.link.slug}` });
-    await loadAll();
   }
 
   function openEditModal(item: PersonalLink) {
@@ -313,69 +327,125 @@ export function AdminDashboard() {
       ? Number.parseInt(editMaxClicks, 10)
       : null;
 
-    const res = await fetch(`/api/admin/links/${editing.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        slug: editSlug.trim(),
-        destinationUrl: editUrl.trim(),
-        redirectCode: editCode,
-        note: editNote.trim() || null,
-        maxClicks: parsedMax,
-        password: editPassword.trim() || undefined,
-        clearPassword: editClearPassword,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setBanner({ type: "err", text: data.error || "Update failed" });
-      return;
+    try {
+      const res = await fetch(`/api/admin/links/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: editSlug.trim(),
+          destinationUrl: editUrl.trim(),
+          redirectCode: editCode,
+          note: editNote.trim() || null,
+          maxClicks: parsedMax,
+          password: editPassword.trim() || undefined,
+          clearPassword: editClearPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: "err", text: data.error || "Update failed" });
+        return;
+      }
+      setEditing(null);
+      setBanner({ type: "ok", text: `Updated /${data.link.slug}` });
+      await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error while updating link" });
     }
-    setEditing(null);
-    setBanner({ type: "ok", text: `Updated /${data.link.slug}` });
-    await loadAll();
   }
 
   async function handleToggleStatus(item: PersonalLink) {
+    setBanner(null);
     const nextStatus = item.status === "active" ? "disabled" : "active";
-    const res = await fetch(`/api/admin/links/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextStatus }),
-    });
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/admin/links/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: "err", text: data.error || "Status update failed" });
+        return;
+      }
+      setBanner({
+        type: "ok",
+        text: `/${item.slug} ${nextStatus === "active" ? "enabled" : "disabled"}`,
+      });
       await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error while updating status" });
     }
   }
 
-  async function handleDeleteLink(id: number) {
-    const res = await fetch(`/api/admin/links/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      setBanner({ type: "ok", text: "Link deleted" });
+  async function handleConfirmDelete() {
+    if (!confirmDelete || deleting) return;
+    setBanner(null);
+    setDeleting(true);
+    try {
+      if (confirmDelete.kind === "personal") {
+        const res = await fetch(`/api/admin/links/${confirmDelete.id}`, {
+          method: "DELETE",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setBanner({ type: "err", text: data.error || "Delete failed" });
+          return;
+        }
+        setBanner({ type: "ok", text: `Deleted /${confirmDelete.slug}` });
+      } else {
+        const res = await fetch(`/api/admin/moderation/${confirmDelete.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "delete_link",
+            reportId: confirmDelete.reportId,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setBanner({ type: "err", text: data.error || "Delete failed" });
+          return;
+        }
+        setBanner({ type: "ok", text: `Deleted /${confirmDelete.slug}` });
+      }
+      setConfirmDelete(null);
       await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error while deleting link" });
+    } finally {
+      setDeleting(false);
     }
   }
 
   async function handleImport(e: FormEvent) {
     e.preventDefault();
+    if (importing) return;
     setBanner(null);
-    const res = await fetch("/api/admin/links/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ format: importFormat, content: importContent }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setBanner({ type: "err", text: data.error || "Import failed" });
-      return;
+    setImporting(true);
+    try {
+      const res = await fetch("/api/admin/links/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: importFormat, content: importContent }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: "err", text: data.error || "Import failed" });
+        return;
+      }
+      setImportContent("");
+      setShowImport(false);
+      setBanner({
+        type: "ok",
+        text: `Imported ${data.inserted} links (${data.skipped} skipped)`,
+      });
+      await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error during import" });
+    } finally {
+      setImporting(false);
     }
-    setImportContent("");
-    setShowImport(false);
-    setBanner({
-      type: "ok",
-      text: `Imported ${data.inserted} links (${data.skipped} skipped)`,
-    });
-    await loadAll();
   }
 
   async function handleModerate(
@@ -388,59 +458,100 @@ export function AdminDashboard() {
       | "block_domain",
     reportId?: number
   ) {
-    const res = await fetch(`/api/admin/moderation/${linkId}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, reportId }),
-    });
-    if (res.ok) {
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/admin/moderation/${linkId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, reportId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: "err", text: data.error || "Moderation failed" });
+        return;
+      }
+      const actionLabels: Record<typeof action, string> = {
+        disable_link: "Link paused",
+        restore_link: "Link restored",
+        delete_link: "Link deleted",
+        dismiss_report: "Report dismissed and link restored",
+        block_domain: "Website blocked",
+      };
       setBanner({
         type: "ok",
-        text: `Moderation action applied: ${action.replace("_", " ")}`,
+        text: actionLabels[action],
       });
       await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error during moderation" });
     }
   }
 
   async function handleAddDomain(e: FormEvent) {
     e.preventDefault();
-    const res = await fetch("/api/admin/blocklist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        domain: newDomain,
-        reason: newDomainReason || undefined,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setBanner({ type: "err", text: data.error || "Could not add domain" });
-      return;
+    setBanner(null);
+    try {
+      const res = await fetch("/api/admin/blocklist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain: newDomain,
+          reason: newDomainReason || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: "err", text: data.error || "Could not add domain" });
+        return;
+      }
+      setNewDomain("");
+      setNewDomainReason("");
+      setBanner({
+        type: "ok",
+        text: `Blocked domain ${data.domain?.domain ?? ""}`.trim(),
+      });
+      await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error adding domain" });
     }
-    setNewDomain("");
-    setNewDomainReason("");
-    await loadAll();
   }
 
-  async function handleRemoveDomain(id: number) {
-    const res = await fetch(`/api/admin/blocklist?id=${id}`, {
-      method: "DELETE",
-    });
-    if (res.ok) {
+  async function handleRemoveDomain(id: number, domain: string) {
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/admin/blocklist?id=${id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: "err", text: data.error || "Could not remove domain" });
+        return;
+      }
+      setBanner({ type: "ok", text: `Removed ${domain} from blocklist` });
       await loadAll();
+    } catch {
+      setBanner({ type: "err", text: "Network error removing domain" });
     }
   }
 
   async function handleUpdateSettings(patch: Partial<AppSettingsState>) {
-    const res = await fetch("/api/admin/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    const data = await res.json();
-    if (res.ok) {
+    setBanner(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: "err", text: data.error || "Could not save settings" });
+        return;
+      }
       setSettings(data.settings);
+      setExpiryHoursDraft(String(data.settings.defaultPublicExpiryHours));
       setBanner({ type: "ok", text: "Settings saved" });
+    } catch {
+      setBanner({ type: "err", text: "Network error saving settings" });
     }
   }
 
@@ -480,17 +591,21 @@ export function AdminDashboard() {
     (l) => l.status === "flagged"
   ).length;
 
+  const inputClass =
+    "h-10 w-full rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3.5 text-base text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-ink)] sm:text-sm";
+  const monoInputClass = `${inputClass} font-mono`;
+
   return (
     <div className="flex flex-col gap-8 md:flex-row md:items-start">
-      {/* Left Navigation Rail in Double-Bezel Enclosure */}
+      {/* Left Navigation Rail */}
       <aside className="w-full shrink-0 md:sticky md:top-24 md:w-64">
-        <DoubleBezel innerClassName="p-4">
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
           <div className="mb-4 px-2">
-            <span className="inline-flex items-center rounded-full bg-black/5 px-3 py-1 text-xs font-medium text-[var(--text-secondary)] dark:bg-white/10">
-              Owner console
-            </span>
-            <div className="mt-2 text-xs text-[var(--text-secondary)]">
-              Personal &amp; public controls
+            <div className="text-sm font-medium text-[var(--text)]">
+              Owner workspace
+            </div>
+            <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+              Manage links &amp; site settings
             </div>
           </div>
 
@@ -499,15 +614,15 @@ export function AdminDashboard() {
               type="button"
               aria-current={tab === "personal" ? "page" : undefined}
               onClick={() => setTab("personal")}
-              className={`flex h-9 w-full items-center gap-3 rounded-xl px-3 text-sm transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] active:scale-[0.98] ${
+              className={`flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm transition-colors duration-150 ${
                 tab === "personal"
-                  ? "bg-[var(--text)] font-medium text-[var(--bg)]"
-                  : "text-[var(--text-secondary)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/10"
+                  ? "bg-[var(--surface-elevated)] font-medium text-[var(--text)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]/60 hover:text-[var(--text)]"
               }`}
             >
               <IconLink size={16} className="shrink-0" />
               <span className="flex-1 text-left">Personal links</span>
-              <span className="font-mono text-xs tabular-nums opacity-70">
+              <span className="font-mono text-xs tabular-nums text-[var(--text-muted)]">
                 {personalLinks.length}
               </span>
             </button>
@@ -516,10 +631,10 @@ export function AdminDashboard() {
               type="button"
               aria-current={tab === "moderation" ? "page" : undefined}
               onClick={() => setTab("moderation")}
-              className={`flex h-9 w-full items-center gap-3 rounded-xl px-3 text-sm transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] active:scale-[0.98] ${
+              className={`flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm transition-colors duration-150 ${
                 tab === "moderation"
-                  ? "bg-[var(--text)] font-medium text-[var(--bg)]"
-                  : "text-[var(--text-secondary)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/10"
+                  ? "bg-[var(--surface-elevated)] font-medium text-[var(--text)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]/60 hover:text-[var(--text)]"
               }`}
             >
               <IconShield size={16} className="shrink-0" />
@@ -535,26 +650,26 @@ export function AdminDashboard() {
               type="button"
               aria-current={tab === "settings" ? "page" : undefined}
               onClick={() => setTab("settings")}
-              className={`flex h-9 w-full items-center gap-3 rounded-xl px-3 text-sm transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] active:scale-[0.98] ${
+              className={`flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm transition-colors duration-150 ${
                 tab === "settings"
-                  ? "bg-[var(--text)] font-medium text-[var(--bg)]"
-                  : "text-[var(--text-secondary)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/10"
+                  ? "bg-[var(--surface-elevated)] font-medium text-[var(--text)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]/60 hover:text-[var(--text)]"
               }`}
             >
               <IconSettings size={16} className="shrink-0" />
-              <span className="flex-1 text-left">Blocklist &amp; settings</span>
+              <span className="flex-1 text-left">Blocked websites &amp; settings</span>
             </button>
           </nav>
 
-          <div className="mt-4 space-y-1 border-t border-[var(--bezel-ring)] pt-4">
+          <div className="mt-4 space-y-1 border-t border-[var(--line)] pt-4">
             <button
               type="button"
               onClick={() => setQuickOpen(true)}
-              className="flex h-9 w-full items-center gap-3 rounded-xl px-3 text-sm text-[var(--text-secondary)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-black/5 hover:text-[var(--text)] active:scale-[0.98] dark:hover:bg-white/10"
+              className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--surface-elevated)]/60 hover:text-[var(--text)]"
             >
               <IconCommand size={16} className="shrink-0" />
               <span className="flex-1 text-left">Quick create</span>
-              <kbd className="rounded-md bg-black/5 px-2 py-0.5 font-mono text-xs text-[var(--text-muted)] ring-1 ring-[var(--bezel-ring)] dark:bg-white/10">
+              <kbd className="rounded border border-[var(--line)] bg-[var(--surface-elevated)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-muted)]">
                 Ctrl+K
               </kbd>
             </button>
@@ -562,32 +677,32 @@ export function AdminDashboard() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex h-9 w-full items-center gap-3 rounded-xl px-3 text-sm text-[var(--text-secondary)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-black/5 hover:text-[var(--text)] active:scale-[0.98] dark:hover:bg-white/10"
+              className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--surface-elevated)]/60 hover:text-[var(--text)]"
             >
               <IconLogOut size={16} className="shrink-0" />
               <span>Sign out</span>
             </button>
           </div>
-        </DoubleBezel>
+        </div>
       </aside>
 
-      {/* Main Fluid Content */}
+      {/* Main Content */}
       <div className="min-w-0 flex-1 space-y-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-medium tracking-[-0.025em] text-[var(--text)]">
+          <div className="space-y-1.5">
+            <h1 className="text-2xl font-medium tracking-[-0.025em] text-[var(--text)] sm:text-3xl">
               {tab === "personal"
                 ? "Personal links"
                 : tab === "moderation"
-                ? "Public moderation"
-                : "Blocklist and settings"}
+                  ? "Public moderation"
+                  : "Blocked websites & settings"}
             </h1>
             <p className="text-sm text-[var(--text-secondary)]">
               {tab === "personal"
-                ? "Permanent custom vanity links with optional caps and passwords"
+                ? "Create permanent custom links with optional visit limits and passwords"
                 : tab === "moderation"
-                ? "Review reported public links and pause abusive destinations"
-                : "Control public link creation, anonymous counting, and blocked domains"}
+                  ? "Review reported public links and pause unsafe destinations"
+                  : "Control public link creation, visit counting, and blocked websites"}
             </p>
           </div>
 
@@ -596,95 +711,81 @@ export function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => handleExport("json")}
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--surface)] px-3 text-xs font-medium text-[var(--text)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10"
+                className="zl-btn-ghost inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium"
               >
-                <IconDownload size={16} />
+                <IconDownload size={14} />
                 <span>Export JSON</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleExport("csv")}
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--surface)] px-3 text-xs font-medium text-[var(--text)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10"
+                className="zl-btn-ghost inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium"
               >
-                <IconDownload size={16} />
+                <IconDownload size={14} />
                 <span>Export CSV</span>
               </button>
               <button
                 type="button"
                 onClick={() => setShowImport((v) => !v)}
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--surface)] px-3 text-xs font-medium text-[var(--text)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10"
+                className="zl-btn-ghost inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium"
               >
-                <IconUpload size={16} />
+                <IconUpload size={14} />
                 <span>{showImport ? "Close import" : "Import"}</span>
               </button>
             </div>
           )}
         </div>
 
-        {/* Asymmetrical Bento Stat Cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-12">
-          <div className="xl:col-span-4">
-            <DoubleBezel innerClassName="p-5 h-full">
-              <div className="text-xs text-[var(--text-muted)]">
-                Personal links
-              </div>
-              <div className="mt-2 font-mono text-3xl font-medium leading-none tabular-nums text-[var(--text)]">
-                {personalLinks.length}
-              </div>
-              <div className="mt-2 text-xs tabular-nums text-[var(--text-secondary)]">
-                {activePersonalCount} active
-              </div>
-            </DoubleBezel>
+        {/* Summary Metrics Bar */}
+        <dl className="grid grid-cols-2 divide-x divide-y divide-[var(--line)] rounded-xl border border-[var(--line)] bg-[var(--surface)] sm:grid-cols-4 sm:divide-y-0">
+          <div className="p-4 sm:p-5">
+            <dt className="text-xs text-[var(--text-muted)]">Personal links</dt>
+            <dd className="mt-2 font-mono text-2xl font-medium tabular-nums text-[var(--text)]">
+              {personalLinks.length}
+            </dd>
+            <dd className="mt-1 text-xs tabular-nums text-[var(--text-secondary)]">
+              {activePersonalCount} active
+            </dd>
           </div>
 
-          <div className="xl:col-span-3">
-            <DoubleBezel innerClassName="p-5 h-full">
-              <div className="text-xs text-[var(--text-muted)]">
-                Public links
-              </div>
-              <div className="mt-2 font-mono text-3xl font-medium leading-none tabular-nums text-[var(--text)]">
-                {publicLinks.length}
-              </div>
-              <div className="mt-2 text-xs tabular-nums text-[var(--text-secondary)]">
-                {flaggedPublicCount} flagged
-              </div>
-            </DoubleBezel>
+          <div className="p-4 sm:p-5">
+            <dt className="text-xs text-[var(--text-muted)]">Public links</dt>
+            <dd className="mt-2 font-mono text-2xl font-medium tabular-nums text-[var(--text)]">
+              {publicLinks.length}
+            </dd>
+            <dd className="mt-1 text-xs tabular-nums text-[var(--text-secondary)]">
+              {flaggedPublicCount} flagged
+            </dd>
           </div>
 
-          <div className="xl:col-span-3">
-            <DoubleBezel innerClassName="p-5 h-full">
-              <div className="text-xs text-[var(--text-muted)]">
-                Open reports
-              </div>
-              <div className="mt-2 font-mono text-3xl font-medium leading-none tabular-nums text-[var(--text)]">
-                {openReportsCount}
-              </div>
-              <div className="mt-2 text-xs tabular-nums text-[var(--text-secondary)]">
-                {reports.length} total
-              </div>
-            </DoubleBezel>
+          <div className="p-4 sm:p-5">
+            <dt className="text-xs text-[var(--text-muted)]">Open reports</dt>
+            <dd className="mt-2 font-mono text-2xl font-medium tabular-nums text-[var(--text)]">
+              {openReportsCount}
+            </dd>
+            <dd className="mt-1 text-xs tabular-nums text-[var(--text-secondary)]">
+              {reports.length} total
+            </dd>
           </div>
 
-          <div className="xl:col-span-2">
-            <DoubleBezel innerClassName="p-5 h-full">
-              <div className="text-xs text-[var(--text-muted)]">Blocked</div>
-              <div className="mt-2 font-mono text-3xl font-medium leading-none tabular-nums text-[var(--text)]">
-                {blocklist.length}
-              </div>
-              <div className="mt-2 text-xs text-[var(--text-secondary)]">
-                Domains
-              </div>
-            </DoubleBezel>
+          <div className="p-4 sm:p-5">
+            <dt className="text-xs text-[var(--text-muted)]">Blocked</dt>
+            <dd className="mt-2 font-mono text-2xl font-medium tabular-nums text-[var(--text)]">
+              {blocklist.length}
+            </dd>
+            <dd className="mt-1 text-xs text-[var(--text-secondary)]">
+              Websites
+            </dd>
           </div>
-        </div>
+        </dl>
 
         {banner && (
           <div
-            role="status"
-            className={`rounded-2xl px-4 py-3 text-xs ring-1 ${
+            role={banner.type === "err" ? "alert" : "status"}
+            className={`rounded-lg border px-4 py-3 text-xs ${
               banner.type === "ok"
-                ? "bg-[var(--positive-soft)] text-[var(--positive)] ring-[var(--positive)]/20"
-                : "bg-[var(--negative-soft)] text-[var(--negative)] ring-[var(--negative)]/20"
+                ? "border-[var(--positive)]/35 bg-[var(--positive-soft)] text-[var(--positive)]"
+                : "border-[var(--negative)]/35 bg-[var(--negative-soft)] text-[var(--negative)]"
             }`}
           >
             {banner.text}
@@ -692,12 +793,12 @@ export function AdminDashboard() {
         )}
 
         {loading ? (
-          <DoubleBezel innerClassName="p-10 text-center text-sm text-[var(--text-muted)]">
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-10 text-center text-sm text-[var(--text-muted)]">
             Loading workspace
-          </DoubleBezel>
+          </div>
         ) : tab === "personal" ? (
           <div className="space-y-8">
-            <DoubleBezel innerClassName="p-6">
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-6">
               <form onSubmit={handleCreateLink} className="space-y-4">
                 <h2 className="text-sm font-medium text-[var(--text)]">
                   New personal link
@@ -709,7 +810,7 @@ export function AdminDashboard() {
                       htmlFor="admin-new-slug"
                       className="block text-xs text-[var(--text-secondary)]"
                     >
-                      Vanity slug
+                      Short ending
                     </label>
                     <input
                       id="admin-new-slug"
@@ -717,7 +818,7 @@ export function AdminDashboard() {
                       placeholder="github"
                       value={slug}
                       onChange={(e) => setSlug(e.target.value)}
-                      className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] placeholder:text-[var(--text-muted)] focus:ring-[var(--accent)]"
+                      className={monoInputClass}
                     />
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
@@ -725,16 +826,16 @@ export function AdminDashboard() {
                       htmlFor="admin-new-url"
                       className="block text-xs text-[var(--text-secondary)]"
                     >
-                      Destination URL
+                      Long link
                     </label>
                     <input
                       id="admin-new-url"
                       type="url"
                       required
-                      placeholder="https://github.com/username?tab=repositories"
+                      placeholder="https://github.com/username"
                       value={destinationUrl}
                       onChange={(e) => setDestinationUrl(e.target.value)}
-                      className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] placeholder:text-[var(--text-muted)] focus:ring-[var(--accent)]"
+                      className={monoInputClass}
                     />
                   </div>
                 </div>
@@ -745,7 +846,7 @@ export function AdminDashboard() {
                       htmlFor="admin-new-redirect"
                       className="block text-xs text-[var(--text-secondary)]"
                     >
-                      Redirect status
+                      Link behavior
                     </label>
                     <select
                       id="admin-new-redirect"
@@ -755,11 +856,11 @@ export function AdminDashboard() {
                           Number(e.target.value) as 301 | 302 | 307
                         )
                       }
-                      className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] focus:ring-[var(--accent)]"
+                      className={inputClass}
                     >
-                      <option value={302}>302 Found</option>
-                      <option value={307}>307 Temporary</option>
-                      <option value={301}>301 Permanent</option>
+                      <option value={302}>Standard (flexible)</option>
+                      <option value={307}>Temporary (strict)</option>
+                      <option value={301}>Permanent (cached)</option>
                     </select>
                   </div>
                   <div className="space-y-1.5">
@@ -767,7 +868,7 @@ export function AdminDashboard() {
                       htmlFor="admin-new-expiry"
                       className="block text-xs text-[var(--text-secondary)]"
                     >
-                      Expiry hours
+                      Expire after (hours)
                     </label>
                     <input
                       id="admin-new-expiry"
@@ -776,7 +877,7 @@ export function AdminDashboard() {
                       placeholder="Never"
                       value={expiresHours}
                       onChange={(e) => setExpiresHours(e.target.value)}
-                      className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] placeholder:text-[var(--text-muted)] focus:ring-[var(--accent)]"
+                      className={monoInputClass}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -784,7 +885,7 @@ export function AdminDashboard() {
                       htmlFor="admin-new-max-clicks"
                       className="block text-xs text-[var(--text-secondary)]"
                     >
-                      Click limit
+                      Max visits
                     </label>
                     <input
                       id="admin-new-max-clicks"
@@ -793,7 +894,7 @@ export function AdminDashboard() {
                       placeholder="Unlimited"
                       value={maxClicks}
                       onChange={(e) => setMaxClicks(e.target.value)}
-                      className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] placeholder:text-[var(--text-muted)] focus:ring-[var(--accent)]"
+                      className={monoInputClass}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -810,7 +911,7 @@ export function AdminDashboard() {
                       placeholder="Optional"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] placeholder:text-[var(--text-muted)] focus:ring-[var(--accent)]"
+                      className={inputClass}
                     />
                   </div>
                 </div>
@@ -825,24 +926,22 @@ export function AdminDashboard() {
                     placeholder="Note"
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    className="h-11 flex-1 rounded-xl bg-[var(--surface-elevated)] px-4 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] placeholder:text-[var(--text-muted)] focus:ring-[var(--accent)]"
+                    className={`${inputClass} flex-1`}
                   />
                   <button
                     type="submit"
-                    disabled={creating}
-                    className="group inline-flex h-11 shrink-0 items-center justify-between gap-3 rounded-full bg-[var(--accent)] pl-5 pr-2 text-sm font-medium text-[var(--accent-fg)] transition-[background-color,opacity,transform] duration-150 ease-[var(--ease-agency)] hover:bg-[var(--accent-hover)] active:scale-[0.97] disabled:opacity-50"
+                    aria-disabled={creating}
+                    className="zl-btn-primary inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-5 text-sm font-medium aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   >
-                    <span>{creating ? "Creating..." : "Create link"}</span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 transition-transform duration-150 ease-[var(--ease-agency)] group-hover:translate-x-0.5">
-                      <IconPlus size={16} />
-                    </span>
+                    <span>{creating ? "Creating" : "Create link"}</span>
+                    <IconPlus size={15} />
                   </button>
                 </div>
               </form>
-            </DoubleBezel>
+            </div>
 
             {showImport && (
-              <DoubleBezel innerClassName="p-6 animate-modal">
+              <div className="animate-modal rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] p-6">
                 <form onSubmit={handleImport} className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-medium text-[var(--text)]">
@@ -854,7 +953,7 @@ export function AdminDashboard() {
                       onChange={(e) =>
                         setImportFormat(e.target.value as "json" | "csv")
                       }
-                      className="h-9 rounded-full bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text)] ring-1 ring-[var(--bezel-ring)]"
+                      className="h-9 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text)]"
                     >
                       <option value="json">JSON</option>
                       <option value="csv">CSV</option>
@@ -871,26 +970,27 @@ export function AdminDashboard() {
                     }
                     value={importContent}
                     onChange={(e) => setImportContent(e.target.value)}
-                    className="w-full rounded-2xl bg-[var(--surface-elevated)] p-4 font-mono text-xs text-[var(--text)] ring-1 ring-[var(--bezel-ring)] focus:ring-[var(--accent)]"
+                    className="w-full rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] p-4 font-mono text-base text-[var(--text)] focus:border-[var(--accent-ink)] sm:text-xs"
                   />
                   <button
                     type="submit"
-                    className="inline-flex h-10 items-center rounded-full bg-[var(--accent)] px-5 text-xs font-medium text-[var(--accent-fg)] hover:bg-[var(--accent-hover)]"
+                    aria-disabled={importing}
+                    className="zl-btn-primary inline-flex h-10 items-center rounded-lg px-5 text-xs font-medium aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   >
-                    Run import
+                    {importing ? "Importing" : "Run import"}
                   </button>
                 </form>
-              </DoubleBezel>
+              </div>
             )}
 
-            {/* Personal Links Ledger */}
-            <DoubleBezel innerClassName="overflow-hidden">
+            {/* Personal Links List */}
+            <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)]">
               {personalLinks.length === 0 ? (
                 <div className="p-10 text-center text-sm text-[var(--text-muted)]">
-                  No personal links yet. Create one above or press Ctrl+K
+                  No saved links yet. Create one above or press Ctrl+K.
                 </div>
               ) : (
-                <div className="divide-y divide-[var(--bezel-ring)]">
+                <div className="divide-y divide-[var(--line)]">
                   {personalLinks.map((item) => (
                     <div
                       key={item.id}
@@ -907,10 +1007,10 @@ export function AdminDashboard() {
                             /{item.slug}
                           </a>
                           <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
                               item.status === "active"
-                                ? "bg-[var(--positive-soft)] text-[var(--positive)]"
-                                : "bg-black/5 text-[var(--text-muted)] dark:bg-white/10"
+                                ? "border-[var(--positive)]/30 bg-[var(--positive-soft)] text-[var(--positive)]"
+                                : "border-[var(--line)] bg-[var(--surface-elevated)] text-[var(--text-muted)]"
                             }`}
                           >
                             <span
@@ -920,21 +1020,29 @@ export function AdminDashboard() {
                                   : "bg-[var(--text-muted)]"
                               }`}
                             />
-                            <span>{item.status}</span>
+                            <span>
+                              {item.status === "disabled" ? "paused" : item.status}
+                            </span>
                           </span>
-                          <span className="font-mono text-xs tabular-nums text-[var(--text-muted)]">
-                            HTTP {item.redirectCode}
-                          </span>
-                          <span className="font-mono text-xs tabular-nums text-[var(--text-muted)]">
+                          {item.redirectCode === 301 && (
+                            <span className="text-xs text-[var(--text-muted)]">
+                              Permanent
+                            </span>
+                          )}
+                          <span className="text-xs tabular-nums text-[var(--text-muted)]">
                             {item.clicks}
-                            {item.maxClicks ? `/${item.maxClicks}` : ""} clicks
+                            {item.maxClicks ? ` / ${item.maxClicks}` : ""}{" "}
+                            {item.clicks === 1 && !item.maxClicks
+                              ? "visit"
+                              : "visits"}
                           </span>
                           {item.passwordProtected && (
                             <span
                               title="Password protected"
-                              className="text-[var(--text-muted)]"
+                              className="inline-flex items-center text-[var(--text-muted)]"
                             >
                               <IconLock size={14} />
+                              <span className="sr-only">Password protected</span>
                             </span>
                           )}
                         </div>
@@ -952,10 +1060,10 @@ export function AdminDashboard() {
                         <button
                           type="button"
                           onClick={() => copySlugUrl(item.slug, item.id)}
-                          className={`inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs ring-1 transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] active:scale-[0.97] ${
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs transition-colors duration-150 ${
                             copiedId === item.id
-                              ? "bg-[var(--positive-soft)] font-medium text-[var(--positive)] ring-[var(--positive)]/20"
-                              : "bg-[var(--surface-elevated)] text-[var(--text-secondary)] ring-[var(--bezel-ring)] hover:text-[var(--text)]"
+                              ? "border-[var(--positive)]/35 bg-[var(--positive-soft)] font-medium text-[var(--positive)]"
+                              : "border-[var(--line-strong)] bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:text-[var(--text)]"
                           }`}
                         >
                           {copiedId === item.id ? (
@@ -969,15 +1077,15 @@ export function AdminDashboard() {
                         </button>
                         <Link
                           href={`/${item.slug}+`}
-                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:text-[var(--text)] active:scale-[0.97]"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text)]"
                         >
-                          <span>Inspect</span>
+                          <span>Preview</span>
                           <IconArrowUpRight size={14} />
                         </Link>
                         <button
                           type="button"
                           onClick={() => openEditModal(item)}
-                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:text-[var(--text)] active:scale-[0.97]"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text)]"
                         >
                           <IconEdit size={14} />
                           <span>Edit</span>
@@ -985,15 +1093,21 @@ export function AdminDashboard() {
                         <button
                           type="button"
                           onClick={() => handleToggleStatus(item)}
-                          className="inline-flex h-8 items-center rounded-lg bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:text-[var(--text)] active:scale-[0.97]"
+                          className="inline-flex h-8 items-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text)]"
                         >
-                          {item.status === "active" ? "Disable" : "Enable"}
+                          {item.status === "active" ? "Pause" : "Resume"}
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteLink(item.id)}
+                          onClick={() =>
+                            setConfirmDelete({
+                              kind: "personal",
+                              id: item.id,
+                              slug: item.slug,
+                            })
+                          }
                           aria-label={`Delete /${item.slug}`}
-                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--negative-soft)] px-3 text-xs text-[var(--negative)] transition-[opacity,transform] duration-150 ease-[var(--ease-agency)] hover:opacity-85 active:scale-[0.97]"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--negative)]/30 bg-[var(--negative-soft)] px-3 text-xs text-[var(--negative)] transition-opacity hover:opacity-85"
                         >
                           <IconTrash size={14} />
                           <span>Delete</span>
@@ -1003,21 +1117,21 @@ export function AdminDashboard() {
                   ))}
                 </div>
               )}
-            </DoubleBezel>
+            </div>
           </div>
         ) : tab === "moderation" ? (
           <div className="space-y-8">
             <section className="space-y-3">
               <h2 className="text-sm font-medium text-[var(--text)]">
-                Flagged and abuse reports queue
+                Reported links
               </h2>
-              <DoubleBezel innerClassName="overflow-hidden">
+              <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)]">
                 {reports.length === 0 ? (
                   <div className="p-10 text-center text-sm text-[var(--text-muted)]">
-                    No abuse reports submitted
+                    No reports to review right now.
                   </div>
                 ) : (
-                  <div className="divide-y divide-[var(--bezel-ring)]">
+                  <div className="divide-y divide-[var(--line)]">
                     {reports.map((rep) => (
                       <div
                         key={rep.reportId}
@@ -1028,11 +1142,12 @@ export function AdminDashboard() {
                             <span className="font-mono text-sm font-medium text-[var(--text)]">
                               /{rep.slug}
                             </span>
-                            <span className="rounded-full bg-[var(--warning-soft)] px-2.5 py-0.5 text-xs font-medium text-[var(--warning)]">
+                            <span className="rounded-md border border-[var(--warning)]/30 bg-[var(--warning-soft)] px-2 py-0.5 text-xs font-medium text-[var(--warning)]">
                               {rep.reason}
                             </span>
-                            <span className="font-mono text-xs text-[var(--text-muted)]">
-                              report: {rep.reportStatus} · link: {rep.linkStatus}
+                            <span className="text-xs text-[var(--text-muted)]">
+                              Report: {rep.reportStatus} · Link:{" "}
+                              {rep.linkStatus === "disabled" ? "paused" : rep.linkStatus}
                             </span>
                           </div>
                           <p className="truncate font-mono text-xs text-[var(--text-secondary)]">
@@ -1055,9 +1170,9 @@ export function AdminDashboard() {
                                 rep.reportId
                               )
                             }
-                            className="h-8 rounded-lg bg-[var(--surface-elevated)] px-3 text-xs font-medium text-[var(--text)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10"
+                            className="h-8 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)]"
                           >
-                            Disable link
+                            Pause link
                           </button>
                           <button
                             type="button"
@@ -1068,9 +1183,9 @@ export function AdminDashboard() {
                                 rep.reportId
                               )
                             }
-                            className="h-8 rounded-lg bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:text-[var(--text)] active:scale-[0.97]"
+                            className="h-8 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text)]"
                           >
-                            Block domain
+                            Block website
                           </button>
                           <button
                             type="button"
@@ -1081,20 +1196,22 @@ export function AdminDashboard() {
                                 rep.reportId
                               )
                             }
-                            className="h-8 rounded-lg bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:text-[var(--text)] active:scale-[0.97]"
+                            className="h-8 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text)]"
                           >
                             Dismiss &amp; restore
                           </button>
                           <button
                             type="button"
                             onClick={() =>
-                              handleModerate(
-                                rep.linkId,
-                                "delete_link",
-                                rep.reportId
-                              )
+                              setConfirmDelete({
+                                kind: "moderation",
+                                id: rep.linkId,
+                                slug: rep.slug,
+                                reportId: rep.reportId,
+                              })
                             }
-                            className="h-8 rounded-lg bg-[var(--negative-soft)] px-3 text-xs text-[var(--negative)] transition-[opacity,transform] duration-150 ease-[var(--ease-agency)] hover:opacity-85 active:scale-[0.97]"
+                            aria-label={`Delete /${rep.slug}`}
+                            className="h-8 rounded-lg border border-[var(--negative)]/30 bg-[var(--negative-soft)] px-3 text-xs text-[var(--negative)] transition-opacity hover:opacity-85"
                           >
                             Delete
                           </button>
@@ -1103,20 +1220,20 @@ export function AdminDashboard() {
                     ))}
                   </div>
                 )}
-              </DoubleBezel>
+              </div>
             </section>
 
             <section className="space-y-3">
               <h2 className="text-sm font-medium text-[var(--text)]">
-                All public visitor links
+                Public links
               </h2>
-              <DoubleBezel innerClassName="overflow-hidden">
+              <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)]">
                 {publicLinks.length === 0 ? (
                   <div className="p-10 text-center text-sm text-[var(--text-muted)]">
-                    No public links created yet
+                    No public links have been created yet.
                   </div>
                 ) : (
-                  <div className="divide-y divide-[var(--bezel-ring)]">
+                  <div className="divide-y divide-[var(--line)]">
                     {publicLinks.map((pl) => (
                       <div
                         key={pl.id}
@@ -1131,18 +1248,18 @@ export function AdminDashboard() {
                               /{pl.slug}
                             </Link>
                             <span
-                              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                              className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
                                 pl.status === "active"
-                                  ? "bg-[var(--positive-soft)] text-[var(--positive)]"
+                                  ? "border-[var(--positive)]/30 bg-[var(--positive-soft)] text-[var(--positive)]"
                                   : pl.status === "flagged"
-                                  ? "bg-[var(--warning-soft)] text-[var(--warning)]"
-                                  : "bg-[var(--negative-soft)] text-[var(--negative)]"
+                                    ? "border-[var(--warning)]/30 bg-[var(--warning-soft)] text-[var(--warning)]"
+                                    : "border-[var(--negative)]/30 bg-[var(--negative-soft)] text-[var(--negative)]"
                               }`}
                             >
-                              {pl.status}
+                              {pl.status === "disabled" ? "paused" : pl.status}
                             </span>
-                            <span className="font-mono text-xs tabular-nums text-[var(--text-muted)]">
-                              {pl.clicks} clicks
+                            <span className="text-xs tabular-nums text-[var(--text-muted)]">
+                              {pl.clicks} {pl.clicks === 1 ? "visit" : "visits"}
                             </span>
                           </div>
                           <p className="truncate font-mono text-xs text-[var(--text-secondary)]">
@@ -1157,9 +1274,9 @@ export function AdminDashboard() {
                               onClick={() =>
                                 handleModerate(pl.id, "disable_link")
                               }
-                              className="h-8 rounded-lg bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:text-[var(--text)] active:scale-[0.97]"
+                              className="h-8 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text)]"
                             >
-                              Disable
+                              Pause
                             </button>
                           ) : (
                             <button
@@ -1167,7 +1284,7 @@ export function AdminDashboard() {
                               onClick={() =>
                                 handleModerate(pl.id, "restore_link")
                               }
-                              className="h-8 rounded-lg bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:text-[var(--text)] active:scale-[0.97]"
+                              className="h-8 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text)]"
                             >
                               Restore
                             </button>
@@ -1175,14 +1292,21 @@ export function AdminDashboard() {
                           <button
                             type="button"
                             onClick={() => handleModerate(pl.id, "block_domain")}
-                            className="h-8 rounded-lg bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] ring-1 ring-[var(--bezel-ring)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:text-[var(--text)] active:scale-[0.97]"
+                            className="h-8 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text)]"
                           >
-                            Block domain
+                            Block website
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleModerate(pl.id, "delete_link")}
-                            className="h-8 rounded-lg bg-[var(--negative-soft)] px-3 text-xs text-[var(--negative)] transition-[opacity,transform] duration-150 ease-[var(--ease-agency)] hover:opacity-85 active:scale-[0.97]"
+                            onClick={() =>
+                              setConfirmDelete({
+                                kind: "moderation",
+                                id: pl.id,
+                                slug: pl.slug,
+                              })
+                            }
+                            aria-label={`Delete /${pl.slug}`}
+                            className="h-8 rounded-lg border border-[var(--negative)]/30 bg-[var(--negative-soft)] px-3 text-xs text-[var(--negative)] transition-opacity hover:opacity-85"
                           >
                             Delete
                           </button>
@@ -1191,25 +1315,25 @@ export function AdminDashboard() {
                     ))}
                   </div>
                 )}
-              </DoubleBezel>
+              </div>
             </section>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <DoubleBezel innerClassName="p-6 space-y-4">
+            <div className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-6">
               <h2 className="text-sm font-medium text-[var(--text)]">
-                Global instance controls
+                Site settings
               </h2>
 
               {settings && (
-                <div className="divide-y divide-[var(--bezel-ring)]">
+                <div className="divide-y divide-[var(--line)]">
                   <label className="flex items-center justify-between gap-4 py-3.5">
                     <div>
                       <div className="text-sm font-medium text-[var(--text)]">
                         Allow public link creation
                       </div>
                       <div className="text-xs text-[var(--text-muted)]">
-                        Visitors on / can create temporary Base62 links
+                        Visitors on the home page can create temporary short links
                       </div>
                     </div>
                     <input
@@ -1227,10 +1351,10 @@ export function AdminDashboard() {
                   <label className="flex items-center justify-between gap-4 py-3.5">
                     <div>
                       <div className="text-sm font-medium text-[var(--text)]">
-                        Anonymous click counter
+                        Count total visits
                       </div>
                       <div className="text-xs text-[var(--text-muted)]">
-                        Integer increment only, zero IP or UA logging
+                        Simple visit counter only — never saves IP addresses or browser info
                       </div>
                     </div>
                     <input
@@ -1248,10 +1372,10 @@ export function AdminDashboard() {
                   <label className="flex items-center justify-between gap-4 py-3.5">
                     <div>
                       <div className="text-sm font-medium text-[var(--text)]">
-                        Allow public custom slugs
+                        Allow custom endings for visitors
                       </div>
                       <div className="text-xs text-[var(--text-muted)]">
-                        Reserves vanity paths for the owner when off
+                        When off, only you can pick custom link endings
                       </div>
                     </div>
                     <input
@@ -1271,7 +1395,7 @@ export function AdminDashboard() {
                       htmlFor="default-expiry-hours"
                       className="mb-2 block text-xs font-medium text-[var(--text-secondary)]"
                     >
-                      Default public link expiry (hours)
+                      Default public link expiration (hours)
                     </label>
                     <div className="flex gap-2">
                       <input
@@ -1279,25 +1403,26 @@ export function AdminDashboard() {
                         type="number"
                         min={1}
                         max={8760}
-                        value={settings.defaultPublicExpiryHours}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            defaultPublicExpiryHours:
-                              Number.parseInt(e.target.value, 10) || 720,
-                          })
-                        }
-                        className="h-10 w-28 rounded-xl bg-[var(--surface-elevated)] px-3.5 font-mono text-sm tabular-nums text-[var(--text)] ring-1 ring-[var(--bezel-ring)]"
+                        value={expiryHoursDraft}
+                        onChange={(e) => setExpiryHoursDraft(e.target.value)}
+                        className="h-10 w-28 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-3.5 font-mono text-base tabular-nums text-[var(--text)] sm:text-sm"
                       />
                       <button
                         type="button"
-                        onClick={() =>
-                          handleUpdateSettings({
-                            defaultPublicExpiryHours:
-                              settings.defaultPublicExpiryHours,
-                          })
-                        }
-                        className="h-10 rounded-full bg-[var(--surface-elevated)] px-4 text-xs font-medium text-[var(--text)] ring-1 ring-[var(--bezel-ring)] hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => {
+                          const parsed = Number.parseInt(expiryHoursDraft, 10);
+                          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 8760) {
+                            setBanner({
+                              type: "err",
+                              text: "Default expiration hours must be between 1 and 8760.",
+                            });
+                            return;
+                          }
+                          void handleUpdateSettings({
+                            defaultPublicExpiryHours: parsed,
+                          });
+                        }}
+                        className="zl-btn-ghost h-10 rounded-lg px-4 text-xs font-medium"
                       >
                         Save hours
                       </button>
@@ -1305,16 +1430,16 @@ export function AdminDashboard() {
                   </div>
                 </div>
               )}
-            </DoubleBezel>
+            </div>
 
-            <DoubleBezel innerClassName="p-6 space-y-4">
+            <div className="space-y-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-6">
               <h2 className="text-sm font-medium text-[var(--text)]">
-                Domain blocklist
+                Blocked websites
               </h2>
               <form onSubmit={handleAddDomain} className="space-y-3">
                 <div className="flex gap-2">
                   <label htmlFor="blocklist-domain" className="sr-only">
-                    Domain to block
+                    Website domain to block
                   </label>
                   <input
                     id="blocklist-domain"
@@ -1323,32 +1448,32 @@ export function AdminDashboard() {
                     placeholder="spam.example"
                     value={newDomain}
                     onChange={(e) => setNewDomain(e.target.value)}
-                    className="h-10 flex-1 rounded-xl bg-[var(--surface-elevated)] px-3 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] focus:ring-[var(--accent)]"
+                    className={`${monoInputClass} flex-1`}
                   />
                   <button
                     type="submit"
-                    className="h-10 rounded-full bg-[var(--accent)] px-5 text-xs font-medium text-[var(--accent-fg)] transition-[background-color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-[var(--accent-hover)] active:scale-[0.97]"
+                    className="zl-btn-primary h-10 rounded-lg px-5 text-xs font-medium"
                   >
                     Block
                   </button>
                 </div>
                 <label htmlFor="blocklist-reason" className="sr-only">
-                  Block reason
+                  Reason
                 </label>
                 <input
                   id="blocklist-reason"
                   type="text"
-                  placeholder="Reason"
+                  placeholder="Reason (optional)"
                   value={newDomainReason}
                   onChange={(e) => setNewDomainReason(e.target.value)}
-                  className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] focus:ring-[var(--accent)]"
+                  className={inputClass}
                 />
               </form>
 
-              <div className="divide-y divide-[var(--bezel-ring)] rounded-2xl bg-[var(--surface-elevated)] ring-1 ring-[var(--bezel-ring)]">
+              <div className="divide-y divide-[var(--line)] rounded-lg border border-[var(--line)] bg-[var(--surface-elevated)]">
                 {blocklist.length === 0 ? (
                   <div className="p-5 text-center text-xs text-[var(--text-muted)]">
-                    No domains blocked
+                    No websites blocked yet
                   </div>
                 ) : (
                   blocklist.map((b) => (
@@ -1368,8 +1493,9 @@ export function AdminDashboard() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleRemoveDomain(b.id)}
-                        className="rounded-full px-2.5 py-1 text-xs text-[var(--negative)] hover:bg-[var(--negative-soft)]"
+                        onClick={() => handleRemoveDomain(b.id, b.domain)}
+                        aria-label={`Remove ${b.domain} from blocklist`}
+                        className="rounded px-2.5 py-1 text-xs text-[var(--negative)] hover:bg-[var(--negative-soft)]"
                       >
                         Remove
                       </button>
@@ -1377,12 +1503,12 @@ export function AdminDashboard() {
                   ))
                 )}
               </div>
-            </DoubleBezel>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Quick Create Modal (Ctrl+K / Cmd+K) */}
+      {/* Quick Create Modal */}
       <ModalDialog
         open={quickOpen}
         onClose={() => setQuickOpen(false)}
@@ -1395,30 +1521,31 @@ export function AdminDashboard() {
               id="quick-create-title"
               className="text-base font-medium text-[var(--text)]"
             >
-              Quick-create personal link
+              Quick-create link
             </h2>
             <button
               type="button"
               onClick={() => setQuickOpen(false)}
-              className="rounded-full bg-black/5 px-2.5 py-1 font-mono text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] dark:bg-white/10"
+              aria-label="Close quick-create dialog"
+              className="rounded border border-[var(--line)] bg-[var(--surface-elevated)] px-2.5 py-1 font-mono text-[11px] text-[var(--text-muted)] hover:text-[var(--text)]"
             >
               Esc
             </button>
           </div>
           <label htmlFor="quick-slug-input" className="sr-only">
-            Vanity slug
+            Short ending
           </label>
           <input
             id="quick-slug-input"
             type="text"
             autoFocus
-            placeholder="Vanity slug"
+            placeholder="Short ending (optional)"
             value={quickSlug}
             onChange={(e) => setQuickSlug(e.target.value)}
-            className="h-11 w-full rounded-xl bg-[var(--surface-elevated)] px-4 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] focus:ring-[var(--accent)]"
+            className={monoInputClass}
           />
           <label htmlFor="quick-url-input" className="sr-only">
-            Destination URL
+            Long link
           </label>
           <input
             id="quick-url-input"
@@ -1427,15 +1554,15 @@ export function AdminDashboard() {
             placeholder="https://example.com"
             value={quickUrl}
             onChange={(e) => setQuickUrl(e.target.value)}
-            className="h-11 w-full rounded-xl bg-[var(--surface-elevated)] px-4 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)] focus:ring-[var(--accent)]"
+            className={monoInputClass}
           />
           <button
             type="submit"
-            className="group inline-flex h-12 w-full items-center justify-between rounded-full bg-[var(--accent)] pl-6 pr-2 text-sm font-medium text-[var(--accent-fg)] transition-[background-color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-[var(--accent-hover)] active:scale-[0.97]"
+            className="zl-btn-primary inline-flex h-11 w-full items-center justify-between rounded-lg px-5 text-sm font-medium"
           >
             <span>Create link</span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 transition-transform duration-150 ease-[var(--ease-agency)] group-hover:translate-x-0.5">
-              <IconArrowRight size={16} />
+            <span className="zl-btn-arrow inline-flex items-center">
+              <IconArrowRight size={15} />
             </span>
           </button>
         </form>
@@ -1460,7 +1587,7 @@ export function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => setEditing(null)}
-                className="rounded-full bg-black/5 px-3 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)] dark:bg-white/10"
+                className="rounded border border-[var(--line)] bg-[var(--surface-elevated)] px-3 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
               >
                 Close
               </button>
@@ -1470,7 +1597,7 @@ export function AdminDashboard() {
                 htmlFor="edit-slug-input"
                 className="block text-xs text-[var(--text-secondary)]"
               >
-                Slug
+                Short ending
               </label>
               <input
                 id="edit-slug-input"
@@ -1478,7 +1605,7 @@ export function AdminDashboard() {
                 required
                 value={editSlug}
                 onChange={(e) => setEditSlug(e.target.value)}
-                className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)]"
+                className={monoInputClass}
               />
             </div>
             <div className="space-y-1.5">
@@ -1486,7 +1613,7 @@ export function AdminDashboard() {
                 htmlFor="edit-url-input"
                 className="block text-xs text-[var(--text-secondary)]"
               >
-                Destination URL
+                Long link
               </label>
               <input
                 id="edit-url-input"
@@ -1494,7 +1621,7 @@ export function AdminDashboard() {
                 required
                 value={editUrl}
                 onChange={(e) => setEditUrl(e.target.value)}
-                className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)]"
+                className={monoInputClass}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -1503,7 +1630,7 @@ export function AdminDashboard() {
                   htmlFor="edit-redirect-select"
                   className="block text-xs text-[var(--text-secondary)]"
                 >
-                  Redirect status
+                  Link behavior
                 </label>
                 <select
                   id="edit-redirect-select"
@@ -1511,11 +1638,11 @@ export function AdminDashboard() {
                   onChange={(e) =>
                     setEditCode(Number(e.target.value) as 301 | 302 | 307)
                   }
-                  className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)]"
+                  className={inputClass}
                 >
-                  <option value={302}>302</option>
-                  <option value={307}>307</option>
-                  <option value={301}>301</option>
+                  <option value={302}>Standard</option>
+                  <option value={307}>Temporary</option>
+                  <option value={301}>Permanent</option>
                 </select>
               </div>
               <div className="space-y-1.5">
@@ -1523,7 +1650,7 @@ export function AdminDashboard() {
                   htmlFor="edit-max-clicks-input"
                   className="block text-xs text-[var(--text-secondary)]"
                 >
-                  Click limit
+                  Max visits
                 </label>
                 <input
                   id="edit-max-clicks-input"
@@ -1532,7 +1659,7 @@ export function AdminDashboard() {
                   placeholder="Unlimited"
                   value={editMaxClicks}
                   onChange={(e) => setEditMaxClicks(e.target.value)}
-                  className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 font-mono text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)]"
+                  className={monoInputClass}
                 />
               </div>
             </div>
@@ -1550,7 +1677,7 @@ export function AdminDashboard() {
                 placeholder="Keep existing"
                 value={editPassword}
                 onChange={(e) => setEditPassword(e.target.value)}
-                className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)]"
+                className={inputClass}
               />
               {editing.passwordProtected && (
                 <label className="mt-2 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
@@ -1576,25 +1703,69 @@ export function AdminDashboard() {
                 type="text"
                 value={editNote}
                 onChange={(e) => setEditNote(e.target.value)}
-                className="h-10 w-full rounded-xl bg-[var(--surface-elevated)] px-3.5 text-sm text-[var(--text)] ring-1 ring-[var(--bezel-ring)]"
+                className={inputClass}
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setEditing(null)}
-                className="h-10 rounded-full bg-black/5 px-4 text-xs text-[var(--text-secondary)] hover:text-[var(--text)] dark:bg-white/10"
+                className="zl-btn-ghost h-10 rounded-lg px-4 text-xs"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="h-10 rounded-full bg-[var(--accent)] px-5 text-xs font-medium text-[var(--accent-fg)] hover:bg-[var(--accent-hover)]"
+                className="zl-btn-primary h-10 rounded-lg px-5 text-xs font-medium"
               >
                 Save changes
               </button>
             </div>
           </form>
+        )}
+      </ModalDialog>
+
+      {/* Delete Confirmation Modal */}
+      <ModalDialog
+        open={confirmDelete !== null}
+        onClose={() => {
+          if (!deleting) setConfirmDelete(null);
+        }}
+        ariaLabelledBy="confirm-delete-title"
+        maxWidthClass="max-w-sm"
+      >
+        {confirmDelete && (
+          <div className="space-y-4">
+            <h2
+              id="confirm-delete-title"
+              className="font-mono text-base font-medium text-[var(--text)]"
+            >
+              Delete /{confirmDelete.slug}?
+            </h2>
+            <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+              This permanently removes the short link, its visit count, and any
+              related reports. This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                data-initial-focus
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleting}
+                className="zl-btn-ghost h-10 rounded-lg px-4 text-xs font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmDelete()}
+                aria-disabled={deleting}
+                className="inline-flex h-10 items-center rounded-lg border border-[var(--negative)]/40 bg-[var(--negative)] px-4 text-xs font-medium text-white transition-opacity hover:opacity-90 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+              >
+                {deleting ? "Deleting" : "Delete link"}
+              </button>
+            </div>
+          </div>
         )}
       </ModalDialog>
     </div>

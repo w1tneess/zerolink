@@ -1,4 +1,4 @@
-import { eq, sql, desc } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb, DEFAULT_SETTINGS } from "@/db";
 import {
   links,
@@ -150,16 +150,23 @@ export function getLinkBySlug(slug: string): LinkRecord | undefined {
   return db.select().from(links).where(eq(links.slug, slug)).get();
 }
 
-export async function incrementAnonymousClick(linkId: number): Promise<void> {
+export async function incrementAnonymousClick(linkId: number): Promise<boolean> {
   const appSettings = await getAppSettings();
   if (!appSettings.anonymousClickCounting) {
-    return;
+    return true;
   }
   const db = getDb();
-  db.update(links)
+  const result = db
+    .update(links)
     .set({ clicks: sql`${links.clicks} + 1` })
-    .where(eq(links.id, linkId))
+    .where(
+      and(
+        eq(links.id, linkId),
+        or(isNull(links.maxClicks), lt(links.clicks, links.maxClicks))
+      )
+    )
     .run();
+  return result.changes > 0;
 }
 
 export class SlugTakenError extends Error {

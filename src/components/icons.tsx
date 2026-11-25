@@ -237,7 +237,11 @@ export function IconHash({ size = 16, ...props }: IconProps) {
 
 export function IconSpinner({ size = 16, ...props }: IconProps) {
   return (
-    <svg {...base(size)} className={`animate-spin ${props.className ?? ""}`}>
+    <svg
+      {...base(size)}
+      {...props}
+      className={`motion-safe:animate-spin ${props.className ?? ""}`.trim()}
+    >
       <circle cx="12" cy="12" r="9" strokeOpacity="0.25" />
       <path d="M21 12a9 9 0 0 0-9-9" />
     </svg>
@@ -251,6 +255,24 @@ export function IconCookie({ size = 16, ...props }: IconProps) {
       <circle cx="9.5" cy="10.5" r="0.7" fill="currentColor" />
       <circle cx="13.5" cy="15.5" r="0.7" fill="currentColor" />
       <circle cx="8.5" cy="15" r="0.7" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function IconSearch({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.5-3.5" />
+    </svg>
+  );
+}
+
+export function IconGrid({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M3 14h18M9 4v16M15 4v16" />
     </svg>
   );
 }

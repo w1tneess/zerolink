@@ -21,7 +21,7 @@ export async function POST(
   if (!rate.allowed) {
     return NextResponse.json(
       {
-        error: `Too many password attempts. Retry in ${rate.retryAfterSeconds}s.`,
+        error: `Too many password attempts. Please wait ${rate.retryAfterSeconds}s and try again.`,
       },
       {
         status: 429,
@@ -35,18 +35,30 @@ export async function POST(
   const availability = checkLinkAvailability(link);
 
   if (!availability.available) {
+    const status =
+      availability.reason === "not_found"
+        ? 404
+        : availability.reason === "disabled" || availability.reason === "flagged"
+          ? 403
+          : 410;
     return NextResponse.json(
-      { error: "This link is unavailable or expired." },
-      { status: availability.reason === "not_found" ? 404 : 410 }
+      { error: "This link is unavailable or has expired." },
+      { status, headers: { "Cache-Control": "no-store" } }
     );
   }
 
   const activeLink = availability.link;
   if (!activeLink.passwordHash) {
-    await incrementAnonymousClick(activeLink.id);
+    const allowed = await incrementAnonymousClick(activeLink.id);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "This short link has reached its visit limit." },
+        { status: 410, headers: { "Cache-Control": "no-store" } }
+      );
+    }
     return NextResponse.json(
       { destinationUrl: activeLink.destinationUrl },
-      { status: 200 }
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   }
 
@@ -54,14 +66,17 @@ export async function POST(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Something looked off in that request. Please try again." },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   const parsed = unlockSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Password is required." },
-      { status: 400 }
+      { error: "Please enter the password." },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
     );
   }
 
@@ -69,11 +84,17 @@ export async function POST(
   if (!valid) {
     return NextResponse.json(
       { error: "Incorrect password for this link." },
-      { status: 401 }
+      { status: 401, headers: { "Cache-Control": "no-store" } }
     );
   }
 
-  await incrementAnonymousClick(activeLink.id);
+  const allowed = await incrementAnonymousClick(activeLink.id);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "This short link has reached its visit limit." },
+      { status: 410, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
   return NextResponse.json(
     { destinationUrl: activeLink.destinationUrl },

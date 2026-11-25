@@ -83,15 +83,22 @@ export function verifyPowSolution(
     submission.nonce.length === 0 ||
     submission.nonce.length > 64
   ) {
-    return { valid: false, reason: "Malformed Proof-of-Work payload." };
+    return { valid: false, reason: "Security check failed. Please try again." };
   }
 
-  if (submission.difficulty < env.POW_DIFFICULTY || submission.difficulty > 24) {
-    return { valid: false, reason: "Invalid Proof-of-Work difficulty." };
+  if (
+    !Number.isInteger(submission.difficulty) ||
+    submission.difficulty < env.POW_DIFFICULTY ||
+    submission.difficulty > 24
+  ) {
+    return { valid: false, reason: "Security check failed. Please try again." };
   }
 
   if (now > submission.expiresAt) {
-    return { valid: false, reason: "Proof-of-Work challenge expired." };
+    return {
+      valid: false,
+      reason: "The quick spam check expired. Please try again.",
+    };
   }
 
   const expectedSig = signChallengeFields(
@@ -107,11 +114,14 @@ export function verifyPowSolution(
     sigBuf.length !== expectedBuf.length ||
     !crypto.timingSafeEqual(sigBuf, expectedBuf)
   ) {
-    return { valid: false, reason: "Invalid Proof-of-Work signature." };
+    return { valid: false, reason: "Security check failed. Please try again." };
   }
 
   if (usedChallenges.has(submission.challengeId)) {
-    return { valid: false, reason: "Proof-of-Work challenge already used." };
+    return {
+      valid: false,
+      reason: "That request was already submitted. Please try again.",
+    };
   }
 
   const digest = crypto
@@ -120,7 +130,7 @@ export function verifyPowSolution(
     .digest();
 
   if (countLeadingZeroBits(digest) < submission.difficulty) {
-    return { valid: false, reason: "Insufficient Proof-of-Work solution." };
+    return { valid: false, reason: "Security check failed. Please try again." };
   }
 
   if (usedChallenges.size >= maxReplayCache) {
@@ -128,7 +138,7 @@ export function verifyPowSolution(
     if (usedChallenges.size >= maxReplayCache) {
       return {
         valid: false,
-        reason: "Proof-of-Work replay protection is temporarily at capacity.",
+        reason: "Too many requests right now. Please try again in a moment.",
       };
     }
   }

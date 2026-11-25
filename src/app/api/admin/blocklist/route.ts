@@ -1,24 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
+import { domainToASCII } from "node:url";
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { blockedDomains } from "@/db/schema";
 import { isAdminAuthenticated } from "@/lib/auth";
 
+function normalizeBlockedDomain(raw: string): string | null {
+  let candidate = raw.trim().toLowerCase().replace(/^https?:\/\//, "");
+  candidate = candidate.split("/")[0]?.split("?")[0]?.split("#")[0] ?? "";
+  if (!candidate || /[\s@[\]]/.test(candidate)) return null;
+  candidate = candidate.split(":")[0]?.replace(/\.+$/, "") ?? "";
+  if (!candidate || !candidate.includes(".")) return null;
+  const ascii = domainToASCII(candidate).toLowerCase();
+  if (!ascii || ascii.length > 253) return null;
+  const labels = ascii.split(".");
+  if (
+    labels.some(
+      (label) =>
+        label.length === 0 ||
+        label.length > 63 ||
+        !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)
+    )
+  ) {
+    return null;
+  }
+  return ascii;
+}
+
 const addDomainSchema = z.object({
-  domain: z
-    .string()
-    .min(3)
-    .max(253)
-    .transform((v) =>
-      v
-        .trim()
-        .toLowerCase()
-        .replace(/^https?:\/\//, "")
-        .split("/")[0]
-        .split(":")[0]
-        .replace(/\.+$/, "")
-    ),
+  domain: z.string().min(3).max(253),
   reason: z.string().max(250).optional().nullable(),
 });
 
@@ -51,7 +62,10 @@ export async function POST(request: NextRequest) {
   }
 
   const parsed = addDomainSchema.safeParse(body);
-  if (!parsed.success || !parsed.data.domain.includes(".")) {
+  const normalizedDomain = parsed.success
+    ? normalizeBlockedDomain(parsed.data.domain)
+    : null;
+  if (!parsed.success || !normalizedDomain) {
     return NextResponse.json(
       { error: "Please provide a valid domain name (e.g. spam.example)." },
       { status: 400 }
@@ -62,7 +76,7 @@ export async function POST(request: NextRequest) {
   const inserted = db
     .insert(blockedDomains)
     .values({
-      domain: parsed.data.domain,
+      domain: normalizedDomain,
       reason: parsed.data.reason?.trim() || null,
       createdAt: Date.now(),
     })
@@ -71,7 +85,7 @@ export async function POST(request: NextRequest) {
     .get();
 
   return NextResponse.json(
-    { domain: inserted ?? { domain: parsed.data.domain } },
+    { domain: inserted ?? { domain: normalizedDomain } },
     { status: 201, headers: { "Cache-Control": "no-store" } }
   );
 }

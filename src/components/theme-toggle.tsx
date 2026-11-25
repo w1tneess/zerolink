@@ -28,18 +28,29 @@ export function ThemeToggle() {
   );
 
   function toggleTheme() {
+    const root = document.documentElement;
+    root.classList.add("theme-switching");
+
     const nextDark = !dark;
     if (nextDark) {
-      document.documentElement.classList.add("dark");
+      root.classList.add("dark");
       try {
         localStorage.setItem("zerolink_theme", "dark");
       } catch {}
     } else {
-      document.documentElement.classList.remove("dark");
+      root.classList.remove("dark");
       try {
         localStorage.setItem("zerolink_theme", "light");
       } catch {}
     }
+
+    // Flush style synchronously so all theme tokens commit without transition smear
+    void root.offsetHeight;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        root.classList.remove("theme-switching");
+      });
+    });
   }
 
   return (
@@ -48,14 +59,14 @@ export function ThemeToggle() {
       onClick={toggleTheme}
       aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
       title={dark ? "Switch to light mode" : "Switch to dark mode"}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-[var(--text-secondary)] transition-[background-color,color,transform] duration-150 ease-[var(--ease-agency)] hover:bg-black/10 hover:text-[var(--text)] active:scale-[0.96] dark:bg-white/10 dark:hover:bg-white/15"
+      className="zl-btn-ghost inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-[var(--text)]"
     >
       {dark === null ? (
-        <span className="h-3.5 w-3.5 rounded-full bg-current opacity-20" />
+        <span className="h-3.5 w-3.5 rounded-full bg-current opacity-25" />
       ) : dark ? (
-        <IconSun size={16} />
+        <IconSun size={15} />
       ) : (
-        <IconMoon size={16} />
+        <IconMoon size={15} />
       )}
     </button>
   );

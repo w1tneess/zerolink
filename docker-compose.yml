@@ -9,8 +9,8 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - DATABASE_DRIVER=sqlite
-      - DATABASE_URL=/app/data/links.db
+      - DATABASE_DRIVER=pglite
+      - DATABASE_URL=/app/data/pgdata
     volumes:
       - zerolink_data:/app/data
 

@@ -1,40 +1,32 @@
 import crypto from "node:crypto";
+import { and, eq, gt, sql } from "drizzle-orm";
+import { getDb, type AppDatabase } from "@/db";
+import { rateLimitHits } from "@/db/schema";
+import { getPowSecret } from "./env";
 
 const ROTATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const DEFAULT_MAX_BUCKETS = 20_000;
-const CLEANUP_BATCH_LIMIT = 128;
-
-interface RateBucket {
-  timestamps: number[];
-  expiresAt: number;
-}
-
-let dailySecret: Buffer = crypto.randomBytes(32);
-let secretCreatedAt = Date.now();
-
-// Stores recent request timestamps per ephemeral HMAC key
-const buckets = new Map<string, RateBucket>();
-
-function rotateSecretIfNeeded(now: number): void {
-  if (now - secretCreatedAt >= ROTATION_INTERVAL_MS) {
-    dailySecret = crypto.randomBytes(32);
-    secretCreatedAt = now;
-    buckets.clear();
-  }
-}
 
 /**
- * Computes an ephemeral HMAC-SHA256 identifier that never stores raw IPs
- * and becomes unlinkable every 24 hours when the in-memory secret rotates.
+ * Deterministic daily HMAC key. Deriving it from SESSION_SECRET means every
+ * serverless instance rotates on the same schedule and never stores raw IPs.
  */
+function dailySecret(now: number): Buffer {
+  const day = Math.floor(now / ROTATION_INTERVAL_MS);
+  return crypto
+    .createHmac("sha256", getPowSecret())
+    .update(`ratelimit-day:${day}`)
+    .digest();
+}
+
+/** Computes an ephemeral identifier that becomes unlinkable when the day rotates. */
 export function hashEphemeralClientKey(
   bucket: string,
   clientIp: string,
   now = Date.now()
 ): string {
-  rotateSecretIfNeeded(now);
   return crypto
-    .createHmac("sha256", dailySecret)
+    .createHmac("sha256", dailySecret(now))
     .update(`${bucket}:${clientIp}`)
     .digest("hex");
 }
@@ -56,34 +48,60 @@ export interface RateLimitResult {
   retryAfterSeconds: number;
 }
 
-function pruneExpiredBucketsBounded(now: number): void {
-  let scanned = 0;
-  for (const [k, entry] of buckets.entries()) {
-    if (entry.expiresAt <= now) {
-      buckets.delete(k);
-    }
-    scanned++;
-    if (scanned >= CLEANUP_BATCH_LIMIT) {
-      break;
-    }
-  }
+async function readHits(db: AppDatabase, key: string, cutoff: number) {
+  const rows = await db
+    .select({ createdAt: rateLimitHits.createdAt })
+    .from(rateLimitHits)
+    .where(and(eq(rateLimitHits.key, key), gt(rateLimitHits.createdAt, cutoff)))
+    .orderBy(rateLimitHits.createdAt);
+  return rows.map((row) => row.createdAt);
 }
 
-export function checkRateLimit(
+async function countBuckets(db: AppDatabase, cutoff: number): Promise<number> {
+  const [{ count }] = await db
+    .select({
+      count: sql<number>`count(distinct ${rateLimitHits.key})::int`,
+    })
+    .from(rateLimitHits)
+    .where(gt(rateLimitHits.createdAt, cutoff));
+  return count;
+}
+
+async function evictColdBuckets(
+  db: AppDatabase,
+  cutoff: number,
+  maxBuckets: number
+): Promise<void> {
+  await db.delete(rateLimitHits).where(sql`${rateLimitHits.createdAt} <= ${cutoff}`);
+  await db.execute(sql.raw(
+    `DELETE FROM rate_limit_hits WHERE key IN (
+      SELECT key FROM rate_limit_hits GROUP BY key ORDER BY MAX(created_at) ASC OFFSET ${maxBuckets}
+    )`
+  ));
+}
+
+export async function checkRateLimit(
   bucket: string,
   clientIp: string,
   limit: number,
   windowMs: number,
   now = Date.now(),
   maxBuckets = DEFAULT_MAX_BUCKETS
-): RateLimitResult {
+): Promise<RateLimitResult> {
   const key = hashEphemeralClientKey(bucket, clientIp, now);
   const cutoff = now - windowMs;
-  const existing = buckets.get(key);
+  const db = await getDb();
 
-  if (!existing && buckets.size >= maxBuckets) {
-    pruneExpiredBucketsBounded(now);
-    if (buckets.size >= maxBuckets) {
+  // Prune stale hits first so bucket counts only reflect live activity.
+  await db.delete(rateLimitHits).where(sql`${rateLimitHits.createdAt} <= ${cutoff}`);
+
+  let valid = await readHits(db, key, cutoff);
+
+  // A new bucket may only be admitted when there is room for it.
+  if (valid.length === 0 && (await countBuckets(db, cutoff)) >= maxBuckets) {
+    await evictColdBuckets(db, cutoff, maxBuckets);
+    valid = await readHits(db, key, cutoff);
+    if (valid.length === 0 && (await countBuckets(db, cutoff)) >= maxBuckets) {
       return {
         allowed: false,
         remaining: 0,
@@ -92,49 +110,39 @@ export function checkRateLimit(
     }
   }
 
-  const valid = existing
-    ? existing.timestamps.filter((t) => t > cutoff)
-    : [];
-
   if (limit <= 0 || valid.length >= limit) {
-    // Re-insert so active keys move to the tail (LRU) and oldest entries stay at head
-    if (existing) buckets.delete(key);
-    buckets.set(key, { timestamps: valid, expiresAt: now + windowMs });
     const oldest = valid[0] ?? now;
-    const retryAfterSeconds = Math.max(
-      1,
-      Math.ceil((oldest + windowMs - now) / 1000)
-    );
     return {
       allowed: false,
       remaining: 0,
-      retryAfterSeconds,
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil((oldest + windowMs - now) / 1000)
+      ),
     };
   }
 
-  valid.push(now);
-  if (existing) buckets.delete(key);
-  buckets.set(key, { timestamps: valid, expiresAt: now + windowMs });
+  await db.insert(rateLimitHits).values({ key, createdAt: now });
+
   return {
     allowed: true,
-    remaining: Math.max(0, limit - valid.length),
+    remaining: Math.max(0, limit - valid.length - 1),
     retryAfterSeconds: 0,
   };
 }
 
-export function getRateLimiterStateForTesting() {
-  return {
-    secretCreatedAt,
-    bucketCount: buckets.size,
-  };
+export async function getRateLimiterStateForTesting(): Promise<{
+  bucketCount: number;
+}> {
+  const db = await getDb();
+  const rows = await db
+    .select({ key: rateLimitHits.key })
+    .from(rateLimitHits)
+    .groupBy(rateLimitHits.key);
+  return { bucketCount: rows.length };
 }
 
-export function forceRotateRateLimiterForTesting(): void {
-  dailySecret = crypto.randomBytes(32);
-  secretCreatedAt = Date.now();
-  buckets.clear();
-}
-
-export function resetRateLimiterForTesting(): void {
-  buckets.clear();
+export async function resetRateLimiterForTesting(): Promise<void> {
+  const db = await getDb();
+  await db.delete(rateLimitHits);
 }

@@ -48,8 +48,13 @@ export async function PATCH(
   }
 
   const data = parsed.data;
-  const db = getDb();
-  const existing = db.select().from(links).where(eq(links.id, linkId)).get();
+  const db = await getDb();
+  const existingRows = await db
+    .select()
+    .from(links)
+    .where(eq(links.id, linkId))
+    .limit(1);
+  const existing = existingRows[0];
   if (!existing) {
     return NextResponse.json({ error: "Link not found." }, { status: 404 });
   }
@@ -63,11 +68,12 @@ export async function PATCH(
     if (!slugCheck.valid || !slugCheck.slug) {
       return NextResponse.json({ error: slugCheck.error }, { status: 400 });
     }
-    const collision = db
+    const collisions = await db
       .select({ id: links.id })
       .from(links)
       .where(eq(links.slug, slugCheck.slug))
-      .get();
+      .limit(1);
+    const collision = collisions[0];
     if (collision && collision.id !== existing.id) {
       return NextResponse.json(
         { error: `Ending "/${slugCheck.slug}" is already taken.` },
@@ -134,12 +140,13 @@ export async function PATCH(
     updates.passwordHash = hashPassword(data.password.trim());
   }
 
-  const updated = db
-    .update(links)
-    .set(updates)
-    .where(eq(links.id, existing.id))
-    .returning()
-    .get();
+  const updated = (
+    await db
+      .update(links)
+      .set(updates)
+      .where(eq(links.id, existing.id))
+      .returning()
+  )[0];
 
   return NextResponse.json(
     {
@@ -177,12 +184,13 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid link ID." }, { status: 400 });
   }
 
-  const db = getDb();
-  const deleted = db
-    .delete(links)
-    .where(eq(links.id, linkId))
-    .returning({ id: links.id })
-    .get();
+  const db = await getDb();
+  const deleted = (
+    await db
+      .delete(links)
+      .where(eq(links.id, linkId))
+      .returning({ id: links.id })
+  )[0];
 
   if (!deleted) {
     return NextResponse.json({ error: "Link not found." }, { status: 404 });

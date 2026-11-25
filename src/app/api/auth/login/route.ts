@@ -13,7 +13,7 @@ const loginSchema = z.object({
 
 export async function POST(request: NextRequest) {
   const ip = extractClientIp(request);
-  const rate = checkRateLimit("admin_login", ip, 5, 15 * 60 * 1000);
+  const rate = await checkRateLimit("admin_login", ip, 5, 15 * 60 * 1000);
   if (!rate.allowed) {
     return NextResponse.json(
       {

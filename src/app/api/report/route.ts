@@ -45,7 +45,7 @@ function extractSlug(input: string): string {
 
 export async function POST(request: NextRequest) {
   const ip = extractClientIp(request);
-  const rate = checkRateLimit("public_report", ip, 10, 15 * 60 * 1000);
+  const rate = await checkRateLimit("public_report", ip, 10, 15 * 60 * 1000);
   if (!rate.allowed) {
     return NextResponse.json(
       {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const powCheck = verifyPowSolution(data.pow);
+  const powCheck = await verifyPowSolution(data.pow);
   if (!powCheck.valid) {
     return NextResponse.json(
       { error: powCheck.reason ?? "Security check failed. Please try again." },
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const targetLink = getLinkBySlug(slug);
+  const targetLink = await getLinkBySlug(slug);
   if (!targetLink) {
     return NextResponse.json(
       { error: `We couldn't find a short link for "/${slug}".` },
@@ -109,29 +109,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const db = getDb();
+  const db = await getDb();
   const now = Date.now();
 
-  db.transaction((tx) => {
-    // Store report with ZERO reporter IP, User-Agent, or identity metadata
-    tx.insert(abuseReports)
-      .values({
-        linkId: targetLink.id,
-        reason: data.reason,
-        details: data.details?.trim() || null,
-        status: "open",
-        createdAt: now,
-      })
-      .run();
-
-    // Personal admin links must never be disabled or auto-flagged by public reports
-    if (targetLink.ownerType === "public" && targetLink.status === "active") {
-      tx.update(links)
-        .set({ status: "flagged", updatedAt: now })
-        .where(eq(links.id, targetLink.id))
-        .run();
-    }
+  // Store report with ZERO reporter IP, User-Agent, or identity metadata
+  await db.insert(abuseReports).values({
+    linkId: targetLink.id,
+    reason: data.reason,
+    details: data.details?.trim() || null,
+    status: "open",
+    createdAt: now,
   });
+
+  // Personal admin links must never be disabled or auto-flagged by public reports
+  if (targetLink.ownerType === "public" && targetLink.status === "active") {
+    await db
+      .update(links)
+      .set({ status: "flagged", updatedAt: now })
+      .where(eq(links.id, targetLink.id));
+  }
 
   return NextResponse.json(
     {

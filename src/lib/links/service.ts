@@ -18,8 +18,8 @@ export interface AppSettings {
 }
 
 export async function getAppSettings(): Promise<AppSettings> {
-  const db = getDb();
-  const rows = db.select().from(settings).all();
+  const db = await getDb();
+  const rows = await db.select().from(settings);
   const map = new Map<string, string>(Object.entries(DEFAULT_SETTINGS));
   for (const row of rows) {
     map.set(row.key, row.value);
@@ -42,7 +42,7 @@ export async function getAppSettings(): Promise<AppSettings> {
 export async function updateAppSettings(
   updates: Partial<AppSettings>
 ): Promise<AppSettings> {
-  const db = getDb();
+  const db = await getDb();
   const now = Date.now();
   const pairs: Array<[string, string]> = [];
 
@@ -72,21 +72,23 @@ export async function updateAppSettings(
   }
 
   for (const [key, value] of pairs) {
-    db.insert(settings)
+    await db
+      .insert(settings)
       .values({ key, value, updatedAt: now })
       .onConflictDoUpdate({
         target: settings.key,
         set: { value, updatedAt: now },
-      })
-      .run();
+      });
   }
 
   return getAppSettings();
 }
 
 export async function getBlockedDomainsList(): Promise<string[]> {
-  const db = getDb();
-  const rows = db.select({ domain: blockedDomains.domain }).from(blockedDomains).all();
+  const db = await getDb();
+  const rows = await db
+    .select({ domain: blockedDomains.domain })
+    .from(blockedDomains);
   return rows.map((r) => r.domain);
 }
 
@@ -145,9 +147,16 @@ export function checkLinkAvailability(
   return { available: true, link };
 }
 
-export function getLinkBySlug(slug: string): LinkRecord | undefined {
-  const db = getDb();
-  return db.select().from(links).where(eq(links.slug, slug)).get();
+export async function getLinkBySlug(
+  slug: string
+): Promise<LinkRecord | undefined> {
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(links)
+    .where(eq(links.slug, slug))
+    .limit(1);
+  return rows[0];
 }
 
 export async function incrementAnonymousClick(linkId: number): Promise<boolean> {
@@ -155,8 +164,8 @@ export async function incrementAnonymousClick(linkId: number): Promise<boolean> 
   if (!appSettings.anonymousClickCounting) {
     return true;
   }
-  const db = getDb();
-  const result = db
+  const db = await getDb();
+  const updated = await db
     .update(links)
     .set({ clicks: sql`${links.clicks} + 1` })
     .where(
@@ -165,8 +174,8 @@ export async function incrementAnonymousClick(linkId: number): Promise<boolean> 
         or(isNull(links.maxClicks), lt(links.clicks, links.maxClicks))
       )
     )
-    .run();
-  return result.changes > 0;
+    .returning({ id: links.id });
+  return updated.length > 0;
 }
 
 export class SlugTakenError extends Error {
@@ -190,8 +199,10 @@ export interface CreateLinkInput {
   note?: string | null;
 }
 
-export function createLinkRecord(input: CreateLinkInput): LinkRecord {
-  const db = getDb();
+export async function createLinkRecord(
+  input: CreateLinkInput
+): Promise<LinkRecord> {
+  const db = await getDb();
   const now = Date.now();
   const passwordHash =
     input.password && input.password.length > 0
@@ -207,7 +218,7 @@ export function createLinkRecord(input: CreateLinkInput): LinkRecord {
   // If explicit slug provided, insert directly
   if (input.slug) {
     try {
-      const inserted = db
+      const inserted = await db
         .insert(links)
         .values({
           slug: input.slug,
@@ -223,9 +234,8 @@ export function createLinkRecord(input: CreateLinkInput): LinkRecord {
           createdAt: now,
           updatedAt: now,
         })
-        .returning()
-        .get();
-      return inserted;
+        .returning();
+      return inserted[0];
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       if (msg.includes("UNIQUE") || msg.includes("constraint")) {
@@ -240,7 +250,7 @@ export function createLinkRecord(input: CreateLinkInput): LinkRecord {
     const length = attempt < 5 ? 7 : 8;
     const candidate = generateBase62Slug(length);
     try {
-      const inserted = db
+      const inserted = await db
         .insert(links)
         .values({
           slug: candidate,
@@ -256,9 +266,8 @@ export function createLinkRecord(input: CreateLinkInput): LinkRecord {
           createdAt: now,
           updatedAt: now,
         })
-        .returning()
-        .get();
-      return inserted;
+        .returning();
+      return inserted[0];
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       if (msg.includes("UNIQUE") || msg.includes("constraint")) {
@@ -271,16 +280,15 @@ export function createLinkRecord(input: CreateLinkInput): LinkRecord {
   throw new Error("Failed to allocate unique short slug after retries.");
 }
 
-export function listAllPublicAndFlaggedLinks() {
-  const db = getDb();
-  const publicLinks = db
+export async function listAllPublicAndFlaggedLinks() {
+  const db = await getDb();
+  const publicLinks = await db
     .select()
     .from(links)
     .where(eq(links.ownerType, "public"))
-    .orderBy(desc(links.createdAt))
-    .all();
+    .orderBy(desc(links.createdAt));
 
-  const openReports = db
+  const openReports = await db
     .select({
       reportId: abuseReports.id,
       linkId: abuseReports.linkId,
@@ -295,8 +303,7 @@ export function listAllPublicAndFlaggedLinks() {
     })
     .from(abuseReports)
     .innerJoin(links, eq(abuseReports.linkId, links.id))
-    .orderBy(desc(abuseReports.createdAt))
-    .all();
+    .orderBy(desc(abuseReports.createdAt));
 
   return { publicLinks, reports: openReports };
 }

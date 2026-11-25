@@ -17,7 +17,7 @@ export async function POST(
   context: { params: Promise<{ slug: string }> }
 ) {
   const ip = extractClientIp(request);
-  const rate = checkRateLimit("link_unlock", ip, 10, 15 * 60 * 1000);
+  const rate = await checkRateLimit("link_unlock", ip, 10, 15 * 60 * 1000);
   if (!rate.allowed) {
     return NextResponse.json(
       {
@@ -31,7 +31,7 @@ export async function POST(
   }
 
   const { slug } = await context.params;
-  const link = getLinkBySlug(slug);
+  const link = await getLinkBySlug(slug);
   const availability = checkLinkAvailability(link);
 
   if (!availability.available) {

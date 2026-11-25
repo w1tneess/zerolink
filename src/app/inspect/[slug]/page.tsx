@@ -49,7 +49,7 @@ export default async function InspectLinkPage({
 }) {
   const { slug: rawSlug } = await params;
   const slug = safeDecodeURIComponent(rawSlug).replace(/\+$/, "");
-  const link = getLinkBySlug(slug);
+  const link = await getLinkBySlug(slug);
   const availability = checkLinkAvailability(link);
   const reasonLabel = !availability.available
     ? (REASON_LABELS[availability.reason] ?? availability.reason.replace("_", " "))

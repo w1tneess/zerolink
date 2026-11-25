@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { resetDbForTesting } from "@/db";
@@ -26,26 +23,23 @@ import { GET as redirectGet } from "@/app/[slug]/route";
 import InspectLinkPage from "@/app/inspect/[slug]/page";
 import { getLinkBySlug } from "@/lib/links/service";
 
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "zerolink-test-"));
-const testDbPath = path.join(tmpDir, "test.db");
-
 beforeAll(() => {
-  process.env.DATABASE_DRIVER = "sqlite";
-  process.env.DATABASE_URL = testDbPath;
+  process.env.DATABASE_DRIVER = "pglite";
+  process.env.DATABASE_URL = "memory://";
   process.env.SESSION_SECRET = "test-session-secret-0123456789abcdef";
   process.env.POW_DIFFICULTY = "8";
   process.env.ADMIN_PASSWORD_HASH = hashPassword("super-secret-owner-pass");
   process.env.APP_BASE_URL = "https://short.test";
 });
 
-beforeEach(() => {
-  resetPowReplayCacheForTesting();
-  resetRateLimiterForTesting();
+beforeEach(async () => {
+  await resetDbForTesting();
+  await resetPowReplayCacheForTesting();
+  await resetRateLimiterForTesting();
 });
 
-afterAll(() => {
-  resetDbForTesting();
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  await resetDbForTesting();
 });
 
 describe("API Integration & Dual-Mode Security", () => {
@@ -102,7 +96,7 @@ describe("API Integration & Dual-Mode Security", () => {
     expect(redirectRes.headers.get("cache-control")).toContain("no-store");
 
     // Preview / Inspect mode does not increment clicks or trigger redirect
-    const beforeInspect = getLinkBySlug(created.slug);
+    const beforeInspect = await getLinkBySlug(created.slug);
     expect(beforeInspect?.clicks).toBe(1);
 
     const proxyRes = proxy(new NextRequest(`https://short.test/${created.slug}+`));
@@ -113,7 +107,7 @@ describe("API Integration & Dual-Mode Security", () => {
     await InspectLinkPage({
       params: Promise.resolve({ slug: created.slug }),
     });
-    const afterInspect = getLinkBySlug(created.slug);
+    const afterInspect = await getLinkBySlug(created.slug);
     expect(afterInspect?.clicks).toBe(1);
   });
 
@@ -140,14 +134,14 @@ describe("API Integration & Dual-Mode Security", () => {
 
     // Test via service + report route: create admin link using createLinkRecord
     const { createLinkRecord } = await import("@/lib/links/service");
-    const adminLink = createLinkRecord({
+    const adminLink = await createLinkRecord({
       slug: "my-github",
       destinationUrl: "https://github.com/example?tab=stars#top",
       ownerType: "admin",
       redirectCode: 301,
     });
 
-    const publicLink = createLinkRecord({
+    const publicLink = await createLinkRecord({
       slug: "pub1234",
       destinationUrl: "https://untrusted.example/offer",
       ownerType: "public",
@@ -170,7 +164,7 @@ describe("API Integration & Dual-Mode Security", () => {
       })
     );
     expect(repAdminRes.status).toBe(201);
-    expect(getLinkBySlug(adminLink.slug)?.status).toBe("active");
+    expect((await getLinkBySlug(adminLink.slug))?.status).toBe("active");
 
     // Public report against public link SHOULD flag it
     const pow2 = solvePowChallenge(issuePowChallenge(8));
@@ -187,12 +181,12 @@ describe("API Integration & Dual-Mode Security", () => {
       })
     );
     expect(repPubRes.status).toBe(201);
-    expect(getLinkBySlug(publicLink.slug)?.status).toBe("flagged");
+    expect((await getLinkBySlug(publicLink.slug))?.status).toBe("flagged");
   });
 
   it("enforces redirect caching safety (no 301 when expiresAt or maxClicks is set)", async () => {
     const { createLinkRecord } = await import("@/lib/links/service");
-    const capped = createLinkRecord({
+    const capped = await createLinkRecord({
       slug: "capped-link",
       destinationUrl: "https://example.com/limited",
       ownerType: "admin",
@@ -272,31 +266,35 @@ describe("API Integration & Dual-Mode Security", () => {
     const { abuseReports, links } = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
 
-    const pubA = createLinkRecord({
+    const pubA = await createLinkRecord({
       slug: "mod-a",
       destinationUrl: "https://example.com/mod-a",
       ownerType: "public",
       redirectCode: 302,
     });
-    const pubB = createLinkRecord({
+    const pubB = await createLinkRecord({
       slug: "mod-b",
       destinationUrl: "https://example.com/mod-b",
       ownerType: "public",
       redirectCode: 302,
     });
 
-    const db = getDb();
-    db.update(links).set({ status: "flagged" }).where(eq(links.id, pubA.id)).run();
-    const repB = db
-      .insert(abuseReports)
-      .values({
-        linkId: pubB.id,
-        reason: "spam",
-        status: "open",
-        createdAt: Date.now(),
-      })
-      .returning()
-      .get();
+    const db = await getDb();
+    await db
+      .update(links)
+      .set({ status: "flagged" })
+      .where(eq(links.id, pubA.id));
+    const repB = (
+      await db
+        .insert(abuseReports)
+        .values({
+          linkId: pubB.id,
+          reason: "spam",
+          status: "open",
+          createdAt: Date.now(),
+        })
+        .returning()
+    )[0];
 
     const token = createAdminSessionToken();
     const wrongDismissReq = new NextRequest(
@@ -314,10 +312,10 @@ describe("API Integration & Dual-Mode Security", () => {
       params: Promise.resolve({ id: String(pubA.id) }),
     });
     expect(wrongRes.status).toBe(404);
-    expect(getLinkBySlug(pubA.slug)?.status).toBe("flagged");
+    expect((await getLinkBySlug(pubA.slug))?.status).toBe("flagged");
 
     // Note-only PATCH must preserve existing maxClicks
-    const personal = createLinkRecord({
+    const personal = await createLinkRecord({
       slug: "note-patch",
       destinationUrl: "https://example.com/note",
       ownerType: "admin",
@@ -460,7 +458,7 @@ describe("API Integration & Dual-Mode Security", () => {
 
     // Atomic maxClicks check
     const { createLinkRecord } = await import("@/lib/links/service");
-    createLinkRecord({
+    await createLinkRecord({
       slug: "one-shot",
       destinationUrl: "https://example.org/once",
       ownerType: "admin",
@@ -475,7 +473,7 @@ describe("API Integration & Dual-Mode Security", () => {
       params: Promise.resolve({ slug: "one-shot" }),
     });
     expect(r2.status).toBe(410);
-    expect(getLinkBySlug("one-shot")?.clicks).toBe(1);
+    expect((await getLinkBySlug("one-shot"))?.clicks).toBe(1);
 
     // Malformed percent-encoding in /inspect/[slug] does not throw URIError
     await expect(

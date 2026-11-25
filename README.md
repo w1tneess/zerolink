@@ -14,7 +14,7 @@
 
 > Most shorteners ask you to trust a black box. ZeroLink keeps the whole destination intact, lets anyone look before they click, and leaves the visitor alone. One small deployment, two ways to use it, nothing sent elsewhere.
 
-<p align="center"><sub>Free and open source under MIT &nbsp;·&nbsp; built with Next.js, TypeScript and SQLite</sub></p>
+<p align="center"><sub>Free and open source under MIT &nbsp;·&nbsp; built with Next.js, TypeScript and PostgreSQL</sub></p>
 
 ## The idea
 
@@ -88,7 +88,7 @@ Fonts are part of the project, QR codes are drawn here, and the public path cont
 4. Create an owner password hash with `npm run hash-password -- "your strong password"` and a session key with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 5. Start the site with `npm run dev`.
 
-Open `http://localhost:3000` for the public page and `http://localhost:3000/admin` for the owner workspace. The data file and its tables are prepared on first run, so there is no separate setup step.
+Open `http://localhost:3000` for the public page and `http://localhost:3000/admin` for the owner workspace. Local development uses an embedded PostgreSQL database (`./data/pgdata`); its tables are created on first run, so there is no separate setup step.
 
 <details>
 <summary><b>Every setting, explained</b></summary>
@@ -96,8 +96,8 @@ Open `http://localhost:3000` for the public page and `http://localhost:3000/admi
 | Setting | What it does | Default |
 |---|---|---|
 | `APP_BASE_URL` | Public address of your site, used for short links and safety checks | `http://localhost:3000` |
-| `DATABASE_DRIVER` | Where data lives. SQLite works today; other drivers need an adapter | `sqlite` |
-| `DATABASE_URL` | Location of the data file, created on first run | `./data/links.db` |
+| `DATABASE_DRIVER` | `pglite` (embedded, local) or `neon` (serverless, for Vercel) | `pglite` |
+| `DATABASE_URL` | Local data directory, or a Neon `postgres://…` connection string | `./data/pgdata` |
 | `ADMIN_PASSWORD_HASH` | Hashed owner password for the private workspace | unset |
 | `SESSION_SECRET` | Signs owner sessions and puzzles. Required in production | unset |
 | `POW_SECRET` | A separate puzzle key, if you want one | follows the session key |
@@ -108,12 +108,28 @@ Open `http://localhost:3000` for the public page and `http://localhost:3000/admi
 
 ## Host it
 
-Build and start the container with `docker compose up -d --build`. It is a standalone build on Node 22, runs as an unprivileged user, keeps data in a persistent volume and checks its own health every half minute. Put Caddy or Nginx in front for HTTPS and set `APP_BASE_URL` to your public address.
+### On Vercel
+
+1. Create a [Neon](https://neon.tech) Postgres database (or use the Neon integration from the Vercel Marketplace).
+2. Import the project into Vercel. Framework detection picks up Next.js automatically; no build command override is needed.
+3. Set these environment variables in the Vercel project:
+   - `DATABASE_DRIVER=neon`
+   - `DATABASE_URL` — the Neon connection string (pooled endpoint)
+   - `SESSION_SECRET` — a random 32+ byte hex string, the same for every deployment
+   - `ADMIN_PASSWORD_HASH` — from `npm run hash-password -- "your strong password"`
+   - `APP_BASE_URL` — your public `https://` address
+4. Deploy. Tables are created idempotently on first request, so no migration step is required.
+
+Rate-limit buckets and spent proof-of-work challenges are stored in the same database, so limits and replay protection hold across every serverless instance. The daily key rotation is derived from `SESSION_SECRET`, which is why that value must be stable across deployments.
+
+### As a container
+
+Build and start with `docker compose up -d --build`. It is a standalone build on Node 22, runs as an unprivileged user, keeps the embedded database in a persistent volume and checks its own health every half minute. Put Caddy or Nginx in front for HTTPS and set `APP_BASE_URL` to your public address.
 
 <details>
 <summary><b>Before you scale up</b></summary>
 
-Serverless platforms cannot write to a local data file, so they need a remote database adapter such as Turso, PostgreSQL or Cloudflare D1. Request limits and solved puzzles live in memory on one process, so run a single instance or move them to shared storage before adding nodes.
+A single container can use embedded PGlite; multiple instances or a serverless deployment need Neon. Request limits and solved puzzles are shared through database tables, so adding nodes does not weaken protection.
 
 </details>
 
@@ -125,7 +141,7 @@ Serverless platforms cannot write to a local data file, so they need a remote da
 - One owner by design; there are no user accounts or team roles.
 - Only the server owner can edit or remove a link. Public reports pause public links, and the owner can restore them.
 - Visit counts are totals only. There is no per-visitor analytics because there are no per-visitor records.
-- SQLite is the only database adapter wired up today. Other drivers stop with a clear message until an adapter is added.
+- Two database drivers are supported: embedded PGlite for local/container use and Neon HTTP for serverless deployments.
 - A permanent redirect is never used for a link with an expiry or visit limit, because browsers cache permanent redirects.
 
 </details>

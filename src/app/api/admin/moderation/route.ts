@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { publicLinks, reports } = listAllPublicAndFlaggedLinks();
+  const { publicLinks, reports } = await listAllPublicAndFlaggedLinks();
 
   return NextResponse.json(
     {

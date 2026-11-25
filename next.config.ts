@@ -3,7 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   ...(process.env.NEXT_STANDALONE === "1" ? { output: "standalone" } : {}),
-  serverExternalPackages: ["better-sqlite3"],
+  // PGlite resolves its WASM file at runtime; bundling it breaks that lookup.
+  serverExternalPackages: ["@electric-sql/pglite"],
   turbopack: {
     rules: {
       "*.css": {

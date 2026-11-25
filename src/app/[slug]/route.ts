@@ -270,7 +270,7 @@ export async function GET(
     });
   }
 
-  const link = getLinkBySlug(slug);
+  const link = await getLinkBySlug(slug);
   const availability = checkLinkAvailability(link);
 
   if (!availability.available) {

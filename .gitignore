@@ -27,7 +27,7 @@ yarn-error.log*
 .env.local
 .env.*.local
 
-# Local SQLite database files
+# Local embedded database files
 /data
 *.db
 *.db-shm

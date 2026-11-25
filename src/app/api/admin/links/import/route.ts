@@ -45,46 +45,43 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const db = getDb();
+  const db = await getDb();
   const now = Date.now();
   let inserted = 0;
   let skipped = 0;
 
-  db.transaction((tx) => {
-    for (const row of rows) {
-      const existing = tx
-        .select({ id: links.id })
-        .from(links)
-        .where(eq(links.slug, row.slug))
-        .get();
-      if (existing) {
-        skipped++;
-        continue;
-      }
-
-      tx.insert(links)
-        .values({
-          slug: row.slug,
-          destinationUrl: row.destinationUrl,
-          ownerType: "admin",
-          status: row.status,
-          redirectCode: resolveSafeRedirectCode(
-            row.redirectCode,
-            row.expiresAt,
-            row.maxClicks
-          ),
-          passwordHash: null,
-          clicks: 0,
-          maxClicks: row.maxClicks,
-          expiresAt: row.expiresAt,
-          note: row.note ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      inserted++;
+  // Neon's HTTP driver has no interactive transactions, so apply row by row.
+  for (const row of rows) {
+    const existing = await db
+      .select({ id: links.id })
+      .from(links)
+      .where(eq(links.slug, row.slug))
+      .limit(1);
+    if (existing.length > 0) {
+      skipped++;
+      continue;
     }
-  });
+
+    await db.insert(links).values({
+      slug: row.slug,
+      destinationUrl: row.destinationUrl,
+      ownerType: "admin",
+      status: row.status,
+      redirectCode: resolveSafeRedirectCode(
+        row.redirectCode,
+        row.expiresAt,
+        row.maxClicks
+      ),
+      passwordHash: null,
+      clicks: 0,
+      maxClicks: row.maxClicks,
+      expiresAt: row.expiresAt,
+      note: row.note ?? null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    inserted++;
+  }
 
   return NextResponse.json(
     { inserted, skipped, errors },

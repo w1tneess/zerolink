@@ -58,7 +58,7 @@ function resolveShortBaseUrl(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   const ip = extractClientIp(request);
-  const rate = checkRateLimit("public_shorten", ip, 20, 15 * 60 * 1000);
+  const rate = await checkRateLimit("public_shorten", ip, 20, 15 * 60 * 1000);
   if (!rate.allowed) {
     return NextResponse.json(
       {
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const powCheck = verifyPowSolution(data.pow);
+  const powCheck = await verifyPowSolution(data.pow);
   if (!powCheck.valid) {
     return NextResponse.json(
       { error: powCheck.reason ?? "Security check failed. Please try again." },
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     if (!slugCheck.valid || !slugCheck.slug) {
       return NextResponse.json({ error: slugCheck.error }, { status: 400 });
     }
-    if (getLinkBySlug(slugCheck.slug)) {
+    if (await getLinkBySlug(slugCheck.slug)) {
       return NextResponse.json(
         { error: "That custom ending is already taken. Try another one." },
         { status: 409 }
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
 
   let created;
   try {
-    created = createLinkRecord({
+    created = await createLinkRecord({
       slug: customSlug,
       destinationUrl: urlCheck.url,
       ownerType: "public",

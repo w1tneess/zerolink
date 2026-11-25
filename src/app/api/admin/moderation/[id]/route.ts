@@ -46,8 +46,13 @@ export async function POST(
     );
   }
 
-  const db = getDb();
-  const link = db.select().from(links).where(eq(links.id, linkId)).get();
+  const db = await getDb();
+  const linkRows = await db
+    .select()
+    .from(links)
+    .where(eq(links.id, linkId))
+    .limit(1);
+  const link = linkRows[0];
   if (!link) {
     return NextResponse.json({ error: "Link not found." }, { status: 404 });
   }
@@ -56,60 +61,50 @@ export async function POST(
   const { action, reportId } = parsed.data;
 
   if (action === "disable_link") {
-    db.transaction((tx) => {
-      tx.update(links)
-        .set({ status: "disabled", updatedAt: now })
-        .where(eq(links.id, link.id))
-        .run();
-      tx.update(abuseReports)
-        .set({ status: "resolved" })
-        .where(eq(abuseReports.linkId, link.id))
-        .run();
-    });
+    await db
+      .update(links)
+      .set({ status: "disabled", updatedAt: now })
+      .where(eq(links.id, link.id));
+    await db
+      .update(abuseReports)
+      .set({ status: "resolved" })
+      .where(eq(abuseReports.linkId, link.id));
   } else if (action === "restore_link") {
-    db.transaction((tx) => {
-      tx.update(links)
-        .set({ status: "active", updatedAt: now })
-        .where(eq(links.id, link.id))
-        .run();
-      tx.update(abuseReports)
-        .set({ status: "dismissed" })
-        .where(eq(abuseReports.linkId, link.id))
-        .run();
-    });
+    await db
+      .update(links)
+      .set({ status: "active", updatedAt: now })
+      .where(eq(links.id, link.id));
+    await db
+      .update(abuseReports)
+      .set({ status: "dismissed" })
+      .where(eq(abuseReports.linkId, link.id));
   } else if (action === "delete_link") {
-    db.delete(links).where(eq(links.id, link.id)).run();
+    await db.delete(links).where(eq(links.id, link.id));
   } else if (action === "dismiss_report") {
-    const dismissError = db.transaction((tx) => {
-      if (reportId) {
-        const updatedReport = tx
-          .update(abuseReports)
-          .set({ status: "dismissed" })
-          .where(
-            and(
-              eq(abuseReports.id, reportId),
-              eq(abuseReports.linkId, link.id)
-            )
-          )
-          .returning({ id: abuseReports.id })
-          .get();
-        if (!updatedReport) {
-          return true;
-        }
-      } else {
-        tx.update(abuseReports)
-          .set({ status: "dismissed" })
-          .where(eq(abuseReports.linkId, link.id))
-          .run();
+    let dismissError = false;
+    if (reportId) {
+      const updatedReport = await db
+        .update(abuseReports)
+        .set({ status: "dismissed" })
+        .where(
+          and(eq(abuseReports.id, reportId), eq(abuseReports.linkId, link.id))
+        )
+        .returning({ id: abuseReports.id });
+      if (updatedReport.length === 0) {
+        dismissError = true;
       }
-      if (link.status === "flagged") {
-        tx.update(links)
-          .set({ status: "active", updatedAt: now })
-          .where(eq(links.id, link.id))
-          .run();
-      }
-      return false;
-    });
+    } else {
+      await db
+        .update(abuseReports)
+        .set({ status: "dismissed" })
+        .where(eq(abuseReports.linkId, link.id));
+    }
+    if (!dismissError && link.status === "flagged") {
+      await db
+        .update(links)
+        .set({ status: "active", updatedAt: now })
+        .where(eq(links.id, link.id));
+    }
     if (dismissError) {
       return NextResponse.json(
         { error: "Report not found for this link." },
@@ -136,27 +131,25 @@ export async function POST(
       );
     }
 
-    db.transaction((tx) => {
-      tx.insert(blockedDomains)
-        .values({
-          domain: hostname,
-          reason: `Blocked from moderation of /${link.slug}`,
-          createdAt: now,
-        })
-        .onConflictDoNothing()
-        .run();
+    await db
+      .insert(blockedDomains)
+      .values({
+        domain: hostname,
+        reason: `Blocked from moderation of /${link.slug}`,
+        createdAt: now,
+      })
+      .onConflictDoNothing();
 
-      if (link.ownerType === "public") {
-        tx.update(links)
-          .set({ status: "disabled", updatedAt: now })
-          .where(eq(links.id, link.id))
-          .run();
-      }
-      tx.update(abuseReports)
-        .set({ status: "resolved" })
-        .where(eq(abuseReports.linkId, link.id))
-        .run();
-    });
+    if (link.ownerType === "public") {
+      await db
+        .update(links)
+        .set({ status: "disabled", updatedAt: now })
+        .where(eq(links.id, link.id));
+    }
+    await db
+      .update(abuseReports)
+      .set({ status: "resolved" })
+      .where(eq(abuseReports.linkId, link.id));
   }
 
   return NextResponse.json(

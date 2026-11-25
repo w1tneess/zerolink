@@ -1,11 +1,14 @@
 import crypto from "node:crypto";
+import { gt, lte, sql } from "drizzle-orm";
+import { getDb, type AppDatabase } from "@/db";
+import { powUsedChallenges } from "@/db/schema";
 import { getEnv, getPowSecret } from "./env";
 
 const CHALLENGE_TTL_MS = 120_000; // 2 minutes
 const DEFAULT_MAX_REPLAY_CACHE = 25_000;
+const CLEANUP_INTERVAL_MS = 60_000;
 
-// In-memory single-use replay guard: challengeId -> expiresAt
-const usedChallenges = new Map<string, number>();
+let lastCleanupAt = 0;
 
 export interface PowChallenge {
   challengeId: string;
@@ -61,19 +64,18 @@ export function issuePowChallenge(customDifficulty?: number): PowChallenge {
   return { challengeId, prefix, difficulty, expiresAt, sig };
 }
 
-function pruneExpiredReplayRecords(now: number): void {
-  for (const [id, exp] of usedChallenges.entries()) {
-    if (exp <= now) {
-      usedChallenges.delete(id);
-    }
-  }
+async function pruneExpired(db: AppDatabase, now: number): Promise<void> {
+  const wallClock = Date.now();
+  if (wallClock - lastCleanupAt < CLEANUP_INTERVAL_MS) return;
+  lastCleanupAt = wallClock;
+  await db.delete(powUsedChallenges).where(lte(powUsedChallenges.expiresAt, now));
 }
 
-export function verifyPowSolution(
+export async function verifyPowSolution(
   submission: PowSubmission,
   now = Date.now(),
   maxReplayCache = DEFAULT_MAX_REPLAY_CACHE
-): { valid: boolean; reason?: string } {
+): Promise<{ valid: boolean; reason?: string }> {
   const env = getEnv();
   if (
     !submission.challengeId ||
@@ -117,13 +119,6 @@ export function verifyPowSolution(
     return { valid: false, reason: "Security check failed. Please try again." };
   }
 
-  if (usedChallenges.has(submission.challengeId)) {
-    return {
-      valid: false,
-      reason: "That request was already submitted. Please try again.",
-    };
-  }
-
   const digest = crypto
     .createHash("sha256")
     .update(`${submission.prefix}:${submission.nonce}`)
@@ -133,17 +128,39 @@ export function verifyPowSolution(
     return { valid: false, reason: "Security check failed. Please try again." };
   }
 
-  if (usedChallenges.size >= maxReplayCache) {
-    pruneExpiredReplayRecords(now);
-    if (usedChallenges.size >= maxReplayCache) {
-      return {
-        valid: false,
-        reason: "Too many requests right now. Please try again in a moment.",
-      };
-    }
+  const db = await getDb();
+  await pruneExpired(db, now);
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(powUsedChallenges)
+    .where(gt(powUsedChallenges.expiresAt, now));
+
+  if (count >= maxReplayCache) {
+    await db.delete(powUsedChallenges).where(lte(powUsedChallenges.expiresAt, now));
+    return {
+      valid: false,
+      reason: "Too many requests right now. Please try again in a moment.",
+    };
   }
 
-  usedChallenges.set(submission.challengeId, submission.expiresAt);
+  // Atomic claim: only one invocation can insert a given challengeId.
+  const claimed = await db
+    .insert(powUsedChallenges)
+    .values({
+      challengeId: submission.challengeId,
+      expiresAt: submission.expiresAt,
+    })
+    .onConflictDoNothing()
+    .returning({ challengeId: powUsedChallenges.challengeId });
+
+  if (claimed.length === 0) {
+    return {
+      valid: false,
+      reason: "That request was already submitted. Please try again.",
+    };
+  }
+
   return { valid: true };
 }
 
@@ -165,10 +182,16 @@ export function solvePowChallenge(challenge: PowChallenge): PowSubmission {
   }
 }
 
-export function resetPowReplayCacheForTesting(): void {
-  usedChallenges.clear();
+export async function resetPowReplayCacheForTesting(): Promise<void> {
+  const db = await getDb();
+  await db.delete(powUsedChallenges);
+  lastCleanupAt = 0;
 }
 
-export function getPowReplayCacheSizeForTesting(): number {
-  return usedChallenges.size;
+export async function getPowReplayCacheSizeForTesting(): Promise<number> {
+  const db = await getDb();
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(powUsedChallenges);
+  return count;
 }

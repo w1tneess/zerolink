@@ -49,13 +49,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const db = getDb();
-  const rows = db
+  const db = await getDb();
+  const rows = await db
     .select()
     .from(links)
     .where(eq(links.ownerType, "admin"))
-    .orderBy(desc(links.createdAt))
-    .all();
+    .orderBy(desc(links.createdAt));
 
   return NextResponse.json(
     { links: rows.map(sanitizeLinkRow) },
@@ -97,7 +96,7 @@ export async function POST(request: NextRequest) {
     if (!slugCheck.valid || !slugCheck.slug) {
       return NextResponse.json({ error: slugCheck.error }, { status: 400 });
     }
-    if (getLinkBySlug(slugCheck.slug)) {
+    if (await getLinkBySlug(slugCheck.slug)) {
       return NextResponse.json(
         { error: `Ending "/${slugCheck.slug}" is already in use.` },
         { status: 409 }
@@ -121,7 +120,7 @@ export async function POST(request: NextRequest) {
 
   let created;
   try {
-    created = createLinkRecord({
+    created = await createLinkRecord({
       slug: customSlug,
       destinationUrl: urlCheck.url,
       ownerType: "admin",

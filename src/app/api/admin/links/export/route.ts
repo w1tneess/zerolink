@@ -16,13 +16,12 @@ export async function GET(request: NextRequest) {
   const format =
     request.nextUrl.searchParams.get("format") === "csv" ? "csv" : "json";
 
-  const db = getDb();
-  const records = db
+  const db = await getDb();
+  const records = await db
     .select()
     .from(links)
     .where(eq(links.ownerType, "admin"))
-    .orderBy(desc(links.createdAt))
-    .all();
+    .orderBy(desc(links.createdAt));
 
   if (format === "csv") {
     const csv = exportLinksToCsv(records);

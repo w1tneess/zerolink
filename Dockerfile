@@ -1,9 +1,6 @@
 FROM node:22-alpine AS base
 WORKDIR /app
 
-# Install build dependencies for better-sqlite3 native addon
-RUN apk add --no-cache python3 make g++
-
 FROM base AS deps
 COPY package.json package-lock.json ./
 RUN npm ci

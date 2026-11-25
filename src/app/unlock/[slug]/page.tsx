@@ -36,7 +36,7 @@ export default async function UnlockPage({
 }) {
   const { slug: rawSlug } = await params;
   const slug = safeDecodeURIComponent(rawSlug);
-  const link = getLinkBySlug(slug);
+  const link = await getLinkBySlug(slug);
   const availability = checkLinkAvailability(link);
   const unavailableReason = !availability.available
     ? (UNLOCK_REASON_TEXT[availability.reason] ?? "is no longer available")

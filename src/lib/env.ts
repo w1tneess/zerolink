@@ -7,9 +7,9 @@ const envSchema = z.object({
     .default("development"),
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
   DATABASE_DRIVER: z
-    .enum(["sqlite", "turso", "postgres"])
-    .default("sqlite"),
-  DATABASE_URL: z.string().min(1).default("./data/links.db"),
+    .enum(["pglite", "neon"])
+    .default("pglite"),
+  DATABASE_URL: z.string().default(""),
   ADMIN_PASSWORD_HASH: z.string().optional(),
   SESSION_SECRET: z.string().optional(),
   POW_SECRET: z.string().optional(),
@@ -32,11 +32,16 @@ function getProcessFallbackSecret(): string {
 }
 
 export function getEnv(): AppEnv {
+  // Vercel deployments default to Neon; local development uses embedded PGlite.
+  const isVercel = process.env.VERCEL === "1";
+  const driver = process.env.DATABASE_DRIVER || (isVercel ? "neon" : "pglite");
   const parsed = envSchema.safeParse({
     NODE_ENV: process.env.NODE_ENV,
     APP_BASE_URL: process.env.APP_BASE_URL || "http://localhost:3000",
-    DATABASE_DRIVER: process.env.DATABASE_DRIVER || "sqlite",
-    DATABASE_URL: process.env.DATABASE_URL || "./data/links.db",
+    DATABASE_DRIVER: driver,
+    DATABASE_URL:
+      process.env.DATABASE_URL ||
+      (driver === "pglite" ? "./data/pgdata" : ""),
     ADMIN_PASSWORD_HASH: process.env.ADMIN_PASSWORD_HASH || undefined,
     SESSION_SECRET: process.env.SESSION_SECRET || undefined,
     POW_SECRET: process.env.POW_SECRET || undefined,

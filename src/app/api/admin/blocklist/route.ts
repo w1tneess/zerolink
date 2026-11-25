@@ -37,12 +37,11 @@ export async function GET(request: NextRequest) {
   if (!(await isAdminAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const db = getDb();
-  const rows = db
+  const db = await getDb();
+  const rows = await db
     .select()
     .from(blockedDomains)
-    .orderBy(desc(blockedDomains.createdAt))
-    .all();
+    .orderBy(desc(blockedDomains.createdAt));
   return NextResponse.json(
     { domains: rows },
     { status: 200, headers: { "Cache-Control": "no-store" } }
@@ -72,8 +71,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const db = getDb();
-  const inserted = db
+  const db = await getDb();
+  const inserted = await db
     .insert(blockedDomains)
     .values({
       domain: normalizedDomain,
@@ -81,11 +80,10 @@ export async function POST(request: NextRequest) {
       createdAt: Date.now(),
     })
     .onConflictDoNothing()
-    .returning()
-    .get();
+    .returning();
 
   return NextResponse.json(
-    { domain: inserted ?? { domain: normalizedDomain } },
+    { domain: inserted[0] ?? { domain: normalizedDomain } },
     { status: 201, headers: { "Cache-Control": "no-store" } }
   );
 }
@@ -101,8 +99,8 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Invalid blocklist ID." }, { status: 400 });
   }
 
-  const db = getDb();
-  db.delete(blockedDomains).where(eq(blockedDomains.id, id)).run();
+  const db = await getDb();
+  await db.delete(blockedDomains).where(eq(blockedDomains.id, id));
 
   return NextResponse.json(
     { ok: true },

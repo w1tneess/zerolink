@@ -1,0 +1,46 @@
+<svg width="1200" height="240" viewBox="0 0 1200 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="240" fill="#0A0B0D"/>
+  <rect x="0.5" y="0.5" width="1199" height="239" stroke="#F2F1EC" stroke-opacity="0.12"/>
+
+  <text x="60" y="34" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" letter-spacing="2" fill="#8F97A5">ONE LINK, START TO FINISH</text>
+
+  <g>
+    <rect x="60" y="56" width="206" height="74" rx="10" fill="#111317" stroke="#F2F1EC" stroke-opacity="0.16"/>
+    <text x="76" y="80" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#7EA8FF">01</text>
+    <text x="76" y="108" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="16" font-weight="500" fill="#F2F1EC">Paste a link</text>
+    <text x="60" y="154" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" fill="#8F97A5">exactly as typed</text>
+  </g>
+
+  <g>
+    <rect x="320" y="56" width="206" height="74" rx="10" fill="#111317" stroke="#F2F1EC" stroke-opacity="0.16"/>
+    <text x="336" y="80" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#7EA8FF">02</text>
+    <text x="336" y="108" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="16" font-weight="500" fill="#F2F1EC">Quiet check</text>
+    <text x="320" y="154" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" fill="#8F97A5">no captcha, no tracking</text>
+  </g>
+
+  <g>
+    <rect x="580" y="56" width="206" height="74" rx="10" fill="#111317" stroke="#F2F1EC" stroke-opacity="0.16"/>
+    <text x="596" y="80" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#7EA8FF">03</text>
+    <text x="596" y="108" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="16" font-weight="500" fill="#F2F1EC">Safety pass</text>
+    <text x="580" y="154" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" fill="#8F97A5">unsafe places refused</text>
+  </g>
+
+  <g>
+    <rect x="840" y="56" width="206" height="74" rx="10" fill="#111317" stroke="#2563EB" stroke-opacity="0.8"/>
+    <text x="856" y="80" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#7EA8FF">04</text>
+    <text x="856" y="108" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#F2F1EC">/a7K2mQp</text>
+    <text x="840" y="154" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" fill="#8F97A5">your short plate</text>
+  </g>
+
+  <path d="M266 93 L314 93" stroke="#F2F1EC" stroke-opacity="0.32" stroke-width="1.4"/>
+  <path d="M310 89 L316 93 L310 97" stroke="#F2F1EC" stroke-opacity="0.5" stroke-width="1.4" stroke-linejoin="round"/>
+  <path d="M526 93 L574 93" stroke="#F2F1EC" stroke-opacity="0.32" stroke-width="1.4"/>
+  <path d="M570 89 L576 93 L570 97" stroke="#F2F1EC" stroke-opacity="0.5" stroke-width="1.4" stroke-linejoin="round"/>
+  <path d="M786 93 L834 93" stroke="#2563EB" stroke-opacity="0.8" stroke-width="1.4"/>
+  <path d="M830 89 L836 93 L830 97" stroke="#7EA8FF" stroke-opacity="0.9" stroke-width="1.4" stroke-linejoin="round"/>
+
+  <path d="M896 130 L896 184 L760 184" stroke="#7EA8FF" stroke-opacity="0.7" stroke-width="1.2"/>
+  <path d="M990 130 L990 184 L1120 184" stroke="#F2F1EC" stroke-opacity="0.3" stroke-width="1.2"/>
+  <text x="756" y="208" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7EA8FF">add + to look, no visit counted</text>
+  <text x="1124" y="208" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#A2A8B4">open it, exact destination</text>
+</svg>

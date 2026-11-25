@@ -1,143 +1,161 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./public/logo-dark.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="./public/logo-light.svg" />
-    <img alt="ZeroLink logo" src="./public/logo-light.svg" width="72" height="72" />
-  </picture>
+  <img src="./docs/banner.svg" alt="ZeroLink — short links that show their work" width="920" />
 </p>
 
-# ZeroLink — Open-Source, Zero-Telemetry Public & Personal Link Shortener
+<h1 align="center">ZeroLink</h1>
 
-ZeroLink is a fast, auditable, self-hostable URL shortener built with Next.js (App Router), TypeScript, Tailwind CSS, Drizzle ORM, and SQLite. It serves **two isolated modes** from a single minimal deployment:
+<p align="center"><em>Short links that show their work.</em></p>
 
-1. **Public Mode (`/`)**: Anyone can shorten links immediately with zero account creation, zero tracking cookies, and zero third-party CAPTCHAs. Supports optional public custom endings (toggleable by the owner), selectable expiration (`24h`, `7d`, `30d`, or owner default), optional password protection, instant local SVG QR codes, and anonymous abuse reporting (`/report`).
-2. **Personal / Owner Mode (`/admin`)**: Single-owner authenticated workspace (with `Cmd/Ctrl + K` quick create) for permanent custom vanity links (e.g. `/github`, `/resume`), configurable `301`/`302`/`307` redirects, click caps, expiration dates, notes, JSON/CSV import & export, public link moderation, domain blocklist management, and runtime site settings.
-
----
-
-## Privacy & Transparency Guarantees
-
-- **Zero Telemetry:** No Google Analytics, no third-party font CDNs (`Switzer` and `Azeret Mono` are self-hosted in `src/fonts/`), no external QR APIs (generated locally via `qrcode`), no ad pixels, and no visitor tracking cookies.
-- **Zero Persistent IP / UA Logging:** Redirects increment only an integer counter (`clicks = clicks + 1`) when anonymous click counting is enabled. Visitor IPs, `User-Agent`, referrers (`Referrer-Policy: no-referrer`), and geolocation are never stored.
-- **100% Verbatim URL Fidelity:** Query parameters (`?a=1&b=2`), percent-encoding (`%20`, `%2F`), and hash fragments (`#section`) are stored and returned verbatim in HTTP `Location` headers.
-- **Transparent Inspection (`/[slug]+`):** Appending `+` or `?preview=true` to any short link opens `/inspect/[slug]` without counting a visit, showing the exact full destination URL, ownership badge (`Verified owner link` vs. `Public link`), status, creation/expiry timestamps, visit counts, and a manual continue or unlock button.
+<p align="center">
+  <a href="#the-idea">The idea</a> · <a href="#two-doors-one-server">Two doors</a> · <a href="#the-journey">The journey</a> · <a href="#privacy-in-plain-words">Privacy</a> · <a href="#safety-without-friction">Safety</a> · <a href="#get-started">Get started</a> · <a href="#host-it">Host it</a> · <a href="#notes">Notes</a>
+</p>
 
 ---
 
-## Anti-Abuse & Security Architecture
+> Most shorteners ask you to trust a black box. ZeroLink keeps the whole destination intact, lets anyone look before they click, and leaves the visitor alone. One small deployment, two ways to use it, nothing sent elsewhere.
 
-- **Ephemeral 24h Rotating-Key Rate Limiter:** Sliding-window limits with bounded LRU bucket eviction on `/api/shorten`, `/api/report`, `/api/auth/login`, and `/api/links/[slug]/unlock`, keyed by `HMAC-SHA256(dailyRandomSecret, ip)` in RAM only.
-- **Privacy-Preserving Bot Protection:** Stateless HMAC-signed SHA-256 hashcash Proof-of-Work (`/api/pow/challenge`) solved locally in a browser Web Worker (`public/pow-worker.js`) with single-use replay protection + an invisible honeypot field.
-- **Strict URL & SSRF Validation:** Allows only `http://` and `https://`; rejects embedded credentials, control characters, private/loopback/link-local/CGNAT/multicast IPs (including decimal/hex/octal/shorthand IPv4 and IPv4-mapped/NAT64/ULA IPv6), self-referential loops, reserved system routes, and IDN-normalized blocked domains.
-- **Personal Link Isolation:** Public abuse reports (`/report`) automatically flag public links for safety review, while `owner_type = 'admin'` links are never disabled or auto-flagged by public reports.
-- **CSV Formula Injection Neutralization:** CSV exports escape leading `=`, `+`, `-`, `@`, tab, and CR characters with `'` and serve downloads with `Content-Security-Policy: sandbox`.
+<p align="center"><sub>Free and open source under MIT &nbsp;·&nbsp; built with Next.js, TypeScript and SQLite</sub></p>
 
-See [`SECURITY.md`](./SECURITY.md) for the full threat model and [`DESIGN.md`](./DESIGN.md) for the visual system and motion architecture.
+## The idea
 
----
+Short links should be honest. The original address is never rewritten, clipped or cleaned up, and every link has a way to be inspected before anyone opens it. The owner gets a private workspace; everybody else gets a simple box to paste a link into.
 
-## Routes & Endpoints
+## Two doors, one server
 
-| Route | Purpose |
+<p align="center">
+  <img src="./docs/two-doors.svg" alt="Public mode and owner mode in one deployment" width="820" />
+</p>
+
+<p align="center"><sub>One deployment, two very different jobs</sub></p>
+
+Public links are disposable and watched by the community. Owner links are the ones on your business card, and a stray report cannot switch them off.
+
+In the private workspace the owner can pause public creation, stop visit counting, reserve custom endings and change the default lifetime. Links can be created with a quick-create shortcut, edited, paused, given notes, and moved in or out through JSON or CSV files.
+
+## What you get
+
+| <img src="./docs/icon-shorten.svg" width="30"> **Make it short** | <img src="./docs/icon-preview.svg" width="30"> **Look before you click** | <img src="./docs/icon-private.svg" width="30"> **Leave no trail** |
+|---|---|---|
+| Clean links in seconds, custom endings, downloadable QR codes | Add `+` to any link to see the destination without a visit counted | No cookies, no visitor profile, no outside services |
+
+<p align="center">
+  <img src="./docs/stats.svg" alt="Zero tracking cookies, zero visitor details, zero sign-ups, original link kept intact" width="920" />
+</p>
+
+<p align="center"><sub>The numbers that matter, on every public page</sub></p>
+
+## The journey
+
+<p align="center">
+  <img src="./docs/flow.svg" alt="From pasted link to short plate, preview and redirect" width="920" />
+</p>
+
+<p align="center"><sub>A short link, start to finish</sub></p>
+
+Your address goes in exactly as you typed it. A small puzzle keeps automated traffic out without a captcha, the destination is checked for unsafe places, and a short plate comes back. Add a plus sign to that plate to inspect it without registering a visit. The preview shows the full destination, whether it is an owner or public link, its status, its dates and its visit count, with a button to continue or unlock. Open the plate itself and the browser is sent to the original address, unchanged, including its search filters and page anchors.
+
+Owner links can also carry a visit limit, an end date, a password and a note. Public links choose how long they live: a day, a week, a month, or the site default.
+
+## Privacy, in plain words
+
+| We keep | We never keep |
 |---|---|
-| `/` | Public shortener, live URL sightline preview, and quick `/<slug>+` inspector |
-| `/[slug]` | Verbatim redirect (`301`/`302`/`307`), password gate redirect, or unavailable status page |
-| `/[slug]+` or `/[slug]?preview=true` | Rewritten via `src/proxy.ts` to `/inspect/[slug]` without counting clicks |
-| `/unlock/[slug]` | Password entry gate for protected short links |
-| `/report` | Anonymous abuse reporting form |
-| `/admin` & `/admin/login` | Single-owner link management, moderation queue, blocklist, and settings |
-| `/api/health` | SQLite connectivity health check (used by Docker `HEALTHCHECK`) |
-| `/robots.txt` & `/sitemap.xml` | Crawl rules and sitemap generated from `APP_BASE_URL` |
+| The destination, exactly as pasted | Where visitors came from |
+| One simple visit total, if counting is on | IP addresses, devices or locations |
+| The short name, its status and dates | Cookies for visitors |
+| Passwords as hashes, where one is set | Analytics, ad pixels or outside scripts |
 
----
+Fonts are part of the project, QR codes are drawn here, and the public path contacts no outside service. Redirects also ask browsers not to pass along a referrer.
 
-## Quick Start (Under 5 Minutes)
+## Safety without friction
 
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/w1tneess/zerolink.git zerolink
-cd zerolink
-npm install
-```
-
-### 2. Configure `.env`
-
-```bash
-cp .env.example .env
-```
-
-Generate a strong `scrypt` password hash for your owner account (minimum 8 characters) and a 32-byte session secret:
-
-```bash
-npm run hash-password -- "your-strong-owner-password"
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-Paste those into `.env`:
-
-```env
-APP_BASE_URL=http://localhost:3000
-DATABASE_DRIVER=sqlite
-DATABASE_URL=./data/links.db
-ADMIN_PASSWORD_HASH=scrypt:...
-SESSION_SECRET=...
-POW_SECRET=
-POW_DIFFICULTY=16
-DEFAULT_REDIRECT_CODE=302
-```
-
-| Variable | Description |
+| Concern | How it is handled |
 |---|---|
-| `APP_BASE_URL` | Public base URL of your instance (used for short link display, metadata, and loop prevention) |
-| `DATABASE_DRIVER` | `sqlite` (default), `turso`, or `postgres` |
-| `DATABASE_URL` | SQLite file path (default `./data/links.db`) or remote connection string |
-| `ADMIN_PASSWORD_HASH` | `scrypt:<salt>:<hash>` generated via `npm run hash-password` for `/admin` login |
-| `SESSION_SECRET` | Random secret (>=16 chars, **required in production**) to sign owner cookies and PoW challenges |
-| `POW_SECRET` | Optional separate HMAC secret (>=16 chars) for PoW challenges (defaults to `SESSION_SECRET`) |
-| `POW_DIFFICULTY` | Leading zero bits required for SHA-256 PoW (`4`–`24`, default `16`) |
-| `DEFAULT_REDIRECT_CODE` | Default HTTP redirect code (`301`, `302`, or `307`; default `302`) |
+| Harmful destinations | Only ordinary web addresses are accepted. Local and private addresses, hidden address formats and links back to this site are refused. |
+| Bot traffic | A signed puzzle runs quietly in the background, a hidden field catches scripts, and each solved puzzle can only be used once. |
+| Flooding | Shortening allows twenty requests per quarter hour, reports ten, sign-ins five and password attempts ten. The key rotates daily and addresses are never stored. |
+| Reports | A report pauses a public link for review. Owner links are never paused by reports, and the owner can block a whole website. |
+| Owner sign-in | Passwords are hashed with scrypt, sessions are signed and locked to the browser, and attempts are limited. |
+| Browser rules | Strict rules stop framing, content sniffing and outside scripts; HTTPS is enforced in production. |
+| Spreadsheet exports | Files are guarded so cell contents cannot run as formulas when opened. |
+| Cached redirects | Links with an expiry or visit limit use temporary redirects, so browsers cannot hold on to a stale destination. |
 
-### 3. Run Locally & Verify
+## Get started
 
-```bash
-npm run dev
-# Run automated Vitest suite
-npm test
-# Lint & production build check
-npm run lint && npm run build
-```
+1. Copy the project with `git clone https://github.com/w1tneess/zerolink.git` and enter the folder with `cd zerolink`.
+2. Install dependencies with `npm install`.
+3. Make your configuration file with `cp .env.example .env`.
+4. Create an owner password hash with `npm run hash-password -- "your strong password"` and a session key with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+5. Start the site with `npm run dev`.
 
-Open `http://localhost:3000` for Public Mode and `http://localhost:3000/admin` for Personal Owner Mode.
+Open `http://localhost:3000` for the public page and `http://localhost:3000/admin` for the owner workspace. The data file and its tables are prepared on first run, so there is no separate setup step.
 
----
+<details>
+<summary><b>Every setting, explained</b></summary>
 
-## Deployment Guides
+| Setting | What it does | Default |
+|---|---|---|
+| `APP_BASE_URL` | Public address of your site, used for short links and safety checks | `http://localhost:3000` |
+| `DATABASE_DRIVER` | Where data lives. SQLite works today; other drivers need an adapter | `sqlite` |
+| `DATABASE_URL` | Location of the data file, created on first run | `./data/links.db` |
+| `ADMIN_PASSWORD_HASH` | Hashed owner password for the private workspace | unset |
+| `SESSION_SECRET` | Signs owner sessions and puzzles. Required in production | unset |
+| `POW_SECRET` | A separate puzzle key, if you want one | follows the session key |
+| `POW_DIFFICULTY` | How much work a puzzle takes, from 4 to 24 | `16` |
+| `DEFAULT_REDIRECT_CODE` | Default redirect type for permanent or temporary links | `302` |
 
-### Docker / Self-Hosted Linux
+</details>
 
-Ensure `APP_BASE_URL`, `ADMIN_PASSWORD_HASH`, and `SESSION_SECRET` are set in `.env`, then run:
+## Host it
 
-```bash
-docker compose up -d --build
-```
+Build and start the container with `docker compose up -d --build`. It is a standalone build on Node 22, runs as an unprivileged user, keeps data in a persistent volume and checks its own health every half minute. Put Caddy or Nginx in front for HTTPS and set `APP_BASE_URL` to your public address.
 
-`docker-compose.yml` mounts the persistent `zerolink_data` volume at `/app/data` (`DATABASE_URL=/app/data/links.db`), builds Next.js in standalone mode (`NEXT_STANDALONE=1`), and monitors `/api/health`. Place behind Caddy or Nginx for automatic TLS (`HTTPS`) and ensure `APP_BASE_URL` matches your public `https://` origin.
+<details>
+<summary><b>Before you scale up</b></summary>
 
-### Swapping SQLite for Turso / Cloudflare D1 / PostgreSQL
+Serverless platforms cannot write to a local data file, so they need a remote database adapter such as Turso, PostgreSQL or Cloudflare D1. Request limits and solved puzzles live in memory on one process, so run a single instance or move them to shared storage before adding nodes.
 
-1. Update `DATABASE_DRIVER` and `DATABASE_URL` in `.env`.
-2. Swap the Drizzle connection adapter in `src/db/index.ts` (and `src/db/schema.ts` / `drizzle.config.ts` dialect if targeting PostgreSQL, then run `npm run db:push`).
+</details>
 
-### Vercel / Cloudflare Notes
+## Notes
 
-- Because `better-sqlite3` stores data on local disk, serverless deployments (Vercel) require configuring a remote database driver (Turso/libSQL or Postgres) in `src/db/index.ts` via `DATABASE_URL`.
-- For Cloudflare Workers / Pages, swap `src/db/index.ts` to `drizzle-orm/d1` bound to your D1 database.
+<details>
+<summary><b>Honest limitations</b></summary>
 
----
+- One owner by design; there are no user accounts or team roles.
+- Only the server owner can edit or remove a link. Public reports pause public links, and the owner can restore them.
+- Visit counts are totals only. There is no per-visitor analytics because there are no per-visitor records.
+- SQLite is the only database adapter wired up today. Other drivers stop with a clear message until an adapter is added.
+- A permanent redirect is never used for a link with an expiry or visit limit, because browsers cache permanent redirects.
 
-## Documentation & License
+</details>
 
-- [`SECURITY.md`](./SECURITY.md) — Threat model, SSRF rules, PoW, rate limiting, and vulnerability reporting
-- [`DESIGN.md`](./DESIGN.md) — Visual tokens, typography, layout commitments, and motion system
-- [`LICENSE`](./LICENSE) — MIT License
+<details>
+<summary><b>For developers: the addresses</b></summary>
+
+| Address | What it does |
+|---|---|
+| `/` | Public shortener with a live sightline preview |
+| `/<slug>` | Redirect, password gate, or an unavailable page |
+| `/<slug>+` and `?preview=true` | Safe inspection, without counting a visit |
+| `/unlock/<slug>` | Password entry for a protected link |
+| `/report` | Anonymous abuse reporting |
+| `/admin` and `/admin/login` | Owner workspace and sign-in |
+| `/api/shorten`, `/api/report` | Create a link, send a report |
+| `/api/pow/challenge` | Issue a puzzle |
+| `/api/auth/*` | Sign in, sign out, check session |
+| `/api/admin/*` | Links, moderation, blocklist, settings, import and export |
+| `/api/health` | Health check used by the container |
+| `/robots.txt`, `/sitemap.xml` | Crawl rules and generated sitemap |
+
+Owner actions are protected by a signed browser cookie. A quick-create shortcut is available with Ctrl+K or Cmd+K.
+
+</details>
+
+Twenty-six automated tests cover address fidelity, unsafe address formats, custom endings, puzzle replay, request limits and both doors of the site. They use a temporary database and never touch your real data.
+
+[Design system](./DESIGN.md) · [Security policy](./SECURITY.md) · [MIT license](./LICENSE)
+
+<p align="center">
+  <img src="./docs/footer.svg" alt="ZeroLink — MIT licensed, built for clarity" width="920" />
+</p>

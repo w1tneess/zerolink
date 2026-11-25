@@ -1,0 +1,19 @@
+<svg width="1200" height="170" viewBox="0 0 1200 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="170" fill="#0A0B0D"/>
+  <rect x="0.5" y="0.5" width="1199" height="169" stroke="#F2F1EC" stroke-opacity="0.12"/>
+  <line x1="300" y1="28" x2="300" y2="142" stroke="#F2F1EC" stroke-opacity="0.11"/>
+  <line x1="600" y1="28" x2="600" y2="142" stroke="#F2F1EC" stroke-opacity="0.11"/>
+  <line x1="900" y1="28" x2="900" y2="142" stroke="#F2F1EC" stroke-opacity="0.11"/>
+
+  <text x="150" y="88" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="48" fill="#F2F1EC">0</text>
+  <text x="150" y="124" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" fill="#A2A8B4">tracking cookies</text>
+
+  <text x="450" y="88" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="48" fill="#F2F1EC">0</text>
+  <text x="450" y="124" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" fill="#A2A8B4">visitor details saved</text>
+
+  <text x="750" y="88" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="48" fill="#F2F1EC">0</text>
+  <text x="750" y="124" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" fill="#A2A8B4">sign-ups or puzzles</text>
+
+  <text x="1050" y="88" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="46" fill="#7EA8FF">100%</text>
+  <text x="1050" y="124" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" fill="#A2A8B4">original link kept</text>
+</svg>

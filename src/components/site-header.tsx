@@ -13,10 +13,14 @@ export function SiteHeader({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const navItems = [
-    { href: "/", label: "Shorten", key: "home" as const, prefetch: true },
-    { href: "/report", label: "Report", key: "report" as const, prefetch: true },
-    { href: "/admin", label: "Owner", key: "admin" as const, prefetch: false },
+  const navItems: Array<{
+    href: string;
+    label: string;
+    key: "home" | "report";
+    prefetch: boolean;
+  }> = [
+    { href: "/", label: "Shorten", key: "home", prefetch: true },
+    { href: "/report", label: "Report", key: "report", prefetch: true },
   ];
 
   return (
